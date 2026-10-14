@@ -21,8 +21,16 @@
   #boardList li.me{color:#ffb703;font-weight:700;}
   #boardList .sc{float:right;margin-left:10px;font-weight:700;}
   #boardList .nm{overflow-wrap:anywhere;}
-  #nameBox input{font-size:20px;padding:10px 14px;border-radius:10px;border:2px solid #4a3a7a;background:#1b1036;color:#fff;text-align:center;width:70%;outline:none;}
-  #nameBox input:focus{border-color:#ff7a00;}
+  #authBox input{display:block;box-sizing:border-box;font-size:20px;padding:10px 14px;margin:10px auto 0;border-radius:10px;border:2px solid #4a3a7a;background:#1b1036;color:#fff;text-align:center;width:80%;outline:none;}
+  #authBox input:focus{border-color:#ff7a00;}
+  button.alt{background:#3b2a66;}
+  button.alt:hover{background:#4d3a85;}
+  button:disabled{opacity:.6;cursor:default;}
+  #authChoice button{margin:14px 6px 0;}
+  #authTitle{margin:0 0 4px;font-size:22px;letter-spacing:2px;color:#ffb703;}
+  #authMsg{min-height:20px;margin-top:10px;color:#ff8a8a;font-size:14px;}
+  #authMsg.ok{color:#8affb0;}
+  #logoutBtn{font-size:13px;padding:6px 14px;margin-top:10px;}
   #who{margin-top:8px;}
   #boardList li.empty{list-style:none;columns:1;}
   #boardNote{margin-top:6px;}
@@ -62,13 +70,25 @@
       Grab coins for bonus points.<br>
       One wrong move and the cop catches you!
     </p>
-    <div id="nameBox" style="display:none">
-      <p>Enter your name for the leaderboard:</p>
-      <input id="nameInput" maxlength="12" placeholder="Your name" autocomplete="off">
-      <br><button id="nameBtn">SAVE NAME</button>
+    <div id="authBox" style="display:none">
+      <p>Log in or create an account to play.<br>Your coins are saved on your account.</p>
+      <div id="authChoice">
+        <button id="showLogin">LOG IN</button>
+        <button id="showRegister" class="alt">SIGN UP</button>
+      </div>
+      <div id="authForm" style="display:none">
+        <p id="authTitle"></p>
+        <input id="userInput" maxlength="12" placeholder="Username" autocomplete="username" autocapitalize="none" spellcheck="false">
+        <input id="passInput" type="password" maxlength="32" placeholder="Password" autocomplete="current-password">
+        <div id="authMsg"></div>
+        <button id="authSubmit">LOG IN</button>
+        <button id="authBack" class="alt">BACK</button>
+        <small id="authNote"></small>
+      </div>
     </div>
     <button id="btn">START</button>
     <small id="who"></small>
+    <button id="logoutBtn" class="alt" style="display:none">LOG OUT</button>
     <small id="walletLine"></small>
     <small>Press SPACE or ENTER &middot; M = mute &middot; On phones: swipe to move</small>
     <div id="board">
@@ -110,15 +130,25 @@ const overlay = document.getElementById('overlay');
 const titleEl = document.getElementById('title');
 const msgEl = document.getElementById('msg');
 const btn = document.getElementById('btn');
-const nameBox = document.getElementById('nameBox');
-const nameInput = document.getElementById('nameInput');
-const nameBtn = document.getElementById('nameBtn');
+const authBox = document.getElementById('authBox');
+const authChoice = document.getElementById('authChoice');
+const authForm = document.getElementById('authForm');
+const authTitle = document.getElementById('authTitle');
+const authMsg = document.getElementById('authMsg');
+const authNote = document.getElementById('authNote');
+const authSubmit = document.getElementById('authSubmit');
+const userInput = document.getElementById('userInput');
+const passInput = document.getElementById('passInput');
+const logoutBtn = document.getElementById('logoutBtn');
 const who = document.getElementById('who');
 
 // ---------- layout / projection ----------
 const ZMAX = 90, D = 14;
 const PZ = 9;          // distance of the runner from the camera
-const COP_GAP = 13;    // how far behind the runner the cop chases (same lane)
+const COP_GAP = 9.5;   // how far behind the runner the cop chases (same lane)
+// Camera: bigger CAM_GY-CAM_HY relative to CAM_U = looking more from above.
+// (raise CAM_HY/CAM_U values or lower CAM_GY to tilt back down)
+const CAM_U = 0.25, CAM_HY = 0.13, CAM_GY = 0.90;
 let W, H, U, HY, GY, CX, dpr;
 let skyline = [];
 function resize() {
@@ -126,8 +156,8 @@ function resize() {
   W = window.innerWidth; H = window.innerHeight;
   cv.width = W * dpr; cv.height = H * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  U = Math.min(W / 4.2, H * 0.36);
-  HY = H * 0.22; GY = H * 0.84; CX = W / 2;
+  U = Math.min(W / 4.4, H * CAM_U);
+  HY = H * CAM_HY; GY = H * CAM_GY; CX = W / 2;
 }
 const sc = z => 1 / (1 + z / D);
 const sy = s => HY + (GY - HY) * s;
@@ -148,10 +178,10 @@ let state = 'menu';
 let P, C, obstacles = [], B = [], coins = [];
 let coinCount = 0, copSide = -1, lastCoinT = 0, combo = 0, sirenT = 0, sirenHi = false;
 let speed = 12, time = 0, score = 0, dist = 0, spawnDist = 45, crashT = 0, overAt = 0;
-let best = 0;
-try { best = +localStorage.getItem('copChaseBest') || 0; } catch (e) {}
+let best = 0;   // loaded from the logged-in account
 
 const JUMP_V = 7.6, GRAV = 22;
+const SPEED_START = 16, SPEED_MAX = 52, SPEED_RAMP = 0.7;   // units/s, units/s, units/s per second
 
 function newBuilding(b, z) {
   const cols = ['#3d2c5c', '#4a3470', '#2f2450', '#553a78', '#34285a'];
@@ -166,7 +196,7 @@ function initBuildings() {
     for (let z = 0; z < ZMAX; z += 7) B.push(newBuilding({ side }, z + Math.random() * 4));
 }
 function reset() {
-  time = 0; score = 0; dist = 0; speed = 16; spawnDist = 45; crashT = 0;
+  time = 0; score = 0; dist = 0; speed = SPEED_START; spawnDist = 45; crashT = 0;
   P = { x: 0, lane: 0, py: 0, vy: 0, slide: 0, queue: false, t: 0, fall: 0 };
   C = { x: 0, z: PZ - COP_GAP, t: 0 };
   obstacles = []; coins = []; coinCount = 0; combo = 0; sirenT = 0; copSide = -1;
@@ -223,26 +253,120 @@ const sfx = {
   siren() { sirenHi = !sirenHi; const f = sirenHi ? 880 : 660; tone(f, f, 0.45, 'sine', 0.02); }
 };
 
-// ---------- player name (asked once, then remembered in this browser) ----------
-let playerName = '';
-try { playerName = localStorage.getItem('copChaseName') || ''; } catch (e) {}
-function cleanName(s) { return String(s || '').replace(/[^\p{L}\p{N} _.-]/gu, '').trim().slice(0, 12); }
-function updateNameUI() {
+// ---------- accounts (Firebase Realtime Database, REST) ----------
+// Every account lives at  /users/<username-lowercase>  =  { name, pass, wallet, best, created }
+// -> open Firebase console > Realtime Database > Data > users  to see everybody.
+let playerName = '';      // logged-in username ('' = logged out)
+let userKey = '';
+const SESSION_KEY = 'copChaseSession';
+let authMode = 'login', authBusy = false, sessionChecking = false;
+const NAME_RE = /^[\p{L}\p{N}_-]{3,12}$/u;
+const userUrl = k => boardBase() + '/users/' + encodeURIComponent(k) + '.json';
+const userFieldUrl = (k, f) => boardBase() + '/users/' + encodeURIComponent(k) + '/' + f + '.json';
+async function dbGetUser(k) {
+  const r = await fetch(userUrl(k));
+  if (!r.ok) throw new Error('db');
+  return await r.json();
+}
+function setAuthMsg(t, ok) { authMsg.textContent = t || ''; authMsg.className = ok ? 'ok' : ''; }
+function showAuthChoice() {
+  authChoice.style.display = ''; authForm.style.display = 'none'; setAuthMsg('');
+  userInput.value = ''; passInput.value = '';
+}
+function showAuthForm(mode) {
+  authMode = mode;
+  authChoice.style.display = 'none'; authForm.style.display = 'block'; setAuthMsg('');
+  const reg = mode === 'register';
+  authTitle.textContent = reg ? 'CREATE ACCOUNT' : 'LOG IN';
+  authSubmit.textContent = reg ? 'SIGN UP' : 'LOG IN';
+  authNote.textContent = reg ? 'Tip: don\'t use a password you use anywhere else.' : '';
+  passInput.autocomplete = reg ? 'new-password' : 'current-password';
+  setTimeout(() => userInput.focus(), 30);
+}
+function updateAuthUI() {
   const has = !!playerName;
-  nameBox.style.display = has ? 'none' : 'block';
+  authBox.style.display = (has || sessionChecking) ? 'none' : 'block';
   btn.style.display = has ? '' : 'none';
-  who.textContent = has ? 'Playing as ' + playerName : '';
-  if (!has) setTimeout(() => nameInput.focus(), 50);
+  logoutBtn.style.display = has ? '' : 'none';
+  walletLine.style.display = has ? '' : 'none';
+  who.textContent = has ? 'Playing as ' + playerName : (sessionChecking ? 'Signing in…' : '');
   updateBjBtn();
 }
-function saveName() {
-  const n = cleanName(nameInput.value);
-  if (!n) { nameInput.style.outline = '2px solid #e63946'; return; }
-  playerName = n;
-  try { localStorage.setItem('copChaseName', n); } catch (e) {}
-  updateNameUI();
+function loginAs(key, rec, pass) {
+  userKey = key; playerName = String(rec.name || key).slice(0, 12);
+  wallet = Math.max(0, parseInt(rec.wallet, 10) || 0);
+  best = Math.max(0, parseInt(rec.best, 10) || 0);
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify({ k: key, p: pass })); } catch (e) {}
+  showAuthChoice(); updateAuthUI(); updateWalletUI();
+  titleEl.textContent = 'COP CHASE RUN'; btn.textContent = 'START';
 }
-nameBtn.addEventListener('click', saveName);
+function logout() {
+  if (state === 'play' || state === 'caught') return;
+  if (bjOpen) closeBj();
+  userKey = ''; playerName = ''; wallet = 0; best = 0; dirty.clear();
+  try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  showAuthChoice(); updateAuthUI(); updateWalletUI();
+}
+async function submitAuth() {
+  if (authBusy) return;
+  const name = userInput.value.trim(), pass = passInput.value;
+  if (!NAME_RE.test(name)) { setAuthMsg('Username: 3-12 letters, numbers, _ or -'); return; }
+  if (pass.length < 4) { setAuthMsg('Password must be at least 4 characters.'); return; }
+  authBusy = true; authSubmit.disabled = true; setAuthMsg('Please wait…', true);
+  try {
+    const key = name.toLowerCase();
+    const u = await dbGetUser(key);
+    if (authMode === 'register') {
+      if (u) { setAuthMsg('That username is already taken.'); return; }
+      const rec = { name, pass, wallet: 0, best: 0, created: Date.now() };
+      const r = await fetch(userUrl(key), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rec) });
+      if (!r.ok) throw new Error('db');
+      loginAs(key, rec, pass);
+    } else {
+      if (!u || typeof u !== 'object' || String(u.pass) !== pass) { setAuthMsg('Wrong username or password.'); return; }
+      loginAs(key, u, pass);
+    }
+  } catch (e) {
+    setAuthMsg('Could not reach the server. Try again.');
+  } finally {
+    authBusy = false; authSubmit.disabled = false;
+  }
+}
+async function restoreSession() {
+  let ses = null;
+  try { ses = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) {}
+  if (!ses || !ses.k) { updateAuthUI(); return; }
+  sessionChecking = true; updateAuthUI();
+  try {
+    const u = await dbGetUser(ses.k);
+    if (u && typeof u === 'object' && String(u.pass) === ses.p) loginAs(ses.k, u, ses.p);
+    else { try { localStorage.removeItem(SESSION_KEY); } catch (e) {} }
+  } catch (e) {
+    setAuthMsg('Could not reach the server. Log in again when it is back.');
+  }
+  sessionChecking = false; updateAuthUI();
+}
+// wallet / best are written to the account right away (retried if the network drops)
+const dirty = new Set();
+let syncChain = Promise.resolve();
+function syncField(f) {
+  if (!userKey) return;
+  const k = userKey;
+  dirty.add(f);
+  syncChain = syncChain.then(async () => {
+    if (k !== userKey) return;
+    try {
+      const r = await fetch(userFieldUrl(k, f), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f === 'wallet' ? wallet : best) });
+      if (r.ok) dirty.delete(f);
+    } catch (e) {}
+  });
+}
+setInterval(() => { for (const f of [...dirty]) syncField(f); }, 8000);
+document.getElementById('showLogin').addEventListener('click', () => showAuthForm('login'));
+document.getElementById('showRegister').addEventListener('click', () => showAuthForm('register'));
+document.getElementById('authBack').addEventListener('click', showAuthChoice);
+authSubmit.addEventListener('click', submitAuth);
+logoutBtn.addEventListener('click', logout);
 
 // ---------- leaderboard (name + score) ----------
 // To make it GLOBAL, paste your Firebase Realtime Database URL here, e.g.
@@ -307,8 +431,7 @@ function renderBoard(hl) {
 }
 
 // ---------- wallet + blackjack (play money only) ----------
-let wallet = 0;
-try { wallet = Math.max(0, parseInt(localStorage.getItem('copChaseWallet'), 10) || 0); } catch (e) {}
+let wallet = 0;   // loaded from the logged-in account
 const walletLine = document.getElementById('walletLine');
 const bjEl = document.getElementById('bj'), bjBtn = document.getElementById('bjBtn');
 function updateWalletUI() {
@@ -316,8 +439,8 @@ function updateWalletUI() {
   document.getElementById('bjWallet').textContent = wallet;
 }
 function saveWallet() {
-  try { localStorage.setItem('copChaseWallet', String(wallet)); } catch (e) {}
   updateWalletUI();
+  syncField('wallet');
 }
 let bjOpen = false;
 const bj = { shoe: [], player: [], dealer: [], bet: 0, lastBet: 0, phase: 'bet', msg: 'Place your bet' };
@@ -460,7 +583,7 @@ function startGame() {
 }
 window.addEventListener('keydown', e => {
   // typing the name: don't treat keys as game controls
-  if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') saveName(); return; }
+  if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') submitAuth(); return; }
   const k = e.key;
   if (bjOpen) { bjKey(e); return; }
   if (k === 'm' || k === 'M') { initAudio(); toggleMute(); return; }
@@ -524,7 +647,7 @@ function crash() {
 function gameOver() {
   state = 'over'; overAt = performance.now();
   const s = Math.floor(score);
-  if (s > best) { best = s; try { localStorage.setItem('copChaseBest', best); } catch (e) {} }
+  if (s > best) { best = s; syncField('best'); }
   titleEl.textContent = 'BUSTED!';
   msgEl.className = '';
   wallet += coinCount; saveWallet();
@@ -542,7 +665,7 @@ function update(dt) {
   }
   if (state === 'play') {
     time += dt;
-    speed = Math.min(40, 16 + time * 0.4);
+    speed = Math.min(SPEED_MAX, SPEED_START + time * SPEED_RAMP);
     dist += speed * dt;
     score += dt * (8 + speed * 0.3);
     P.x += (P.lane - P.x) * Math.min(1, dt * 14);
@@ -558,7 +681,8 @@ function update(dt) {
     spawnDist -= speed * dt;
     if (spawnDist <= 0) {
       spawnRow();
-      const gap = speed * (0.9 + Math.random() * 0.7) + 5;
+      // rows get closer together the longer you survive
+      const gap = speed * (Math.max(0.7, 0.95 - time * 0.004) + Math.random() * 0.7) + 5;
       spawnDist = gap;
       if (Math.random() < 0.8) spawnCoins(gap);
     }
@@ -705,7 +829,7 @@ function drawObstacle(o) {
     const n = 8, bw = w / n;
     for (let i = 0; i < n; i += 2) ctx.fillRect(cx - w / 2 + i * bw, y, bw, h);
   } else {
-    const w = 0.92 * k, h = 1.55 * k, x = cx - w / 2, y = gy - h;
+    const w = 0.92 * k, h = 1.4 * k, x = cx - w / 2, y = gy - h;
     ctx.fillStyle = '#2c6fbb'; ctx.fillRect(x, y, w, h);
     ctx.fillStyle = '#4b8fd8'; ctx.fillRect(x, y, w, 0.12 * k);
     ctx.fillStyle = '#1d4a82'; ctx.fillRect(x, gy - 0.15 * k, w, 0.15 * k);
@@ -844,6 +968,11 @@ function render() {
     ctx.fillStyle = '#fff'; ctx.fillText('x ' + coinCount, 16 + fs * 1.0, 14 + fs * 1.25);
     ctx.fillStyle = '#ffd98a'; ctx.textAlign = 'right';
     ctx.fillText('BEST ' + Math.max(best, Math.floor(score)), W - 16, 14);
+    if (state === 'play') {
+      const lvl = (speed - SPEED_START) / (SPEED_MAX - SPEED_START);
+      ctx.fillStyle = lvl > 0.75 ? '#ff6b6b' : lvl > 0.4 ? '#ffb703' : '#9be28f';
+      ctx.fillText('SPEED ' + (speed / SPEED_START).toFixed(1) + 'x', W - 16, 14 + fs * 1.25);
+    }
     if (state === 'caught') {
       ctx.textAlign = 'center'; ctx.fillStyle = '#ff4d4d';
       ctx.font = '900 ' + Math.round(fs * 2.2) + 'px system-ui,sans-serif';
@@ -862,7 +991,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 window.addEventListener('resize', resize);
-resize(); makeSkyline(); reset(); updateWalletUI(); updateNameUI(); loadBoard();
+resize(); makeSkyline(); reset(); updateWalletUI(); updateAuthUI(); restoreSession(); loadBoard();
 requestAnimationFrame(frame);
 })();
 </script>
