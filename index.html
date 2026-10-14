@@ -86,6 +86,7 @@
       <b>&uarr;</b> jump over low barriers<br>
       <b>&darr;</b> slide under high bars<br>
       Dodge crates by switching lanes.<br>
+      Oncoming trucks are fast &ndash; watch the red warning sign!<br>
       Grab coins for bonus points.<br>
       One wrong move and the cop catches you!
     </p>
@@ -215,7 +216,10 @@ const MILESTONE = 5000;                              // colour burst every N poi
 let nextMilestone = MILESTONE, fx = [], fxMain = null;
 
 const JUMP_V = 7.6, GRAV = 22;
-const SPEED_START = 16, SPEED_MAX = 52, SPEED_RAMP = 0.7;   // units/s, units/s, units/s per second
+const SPEED_START = 16, SPEED_MAX = 80, SPEED_RAMP = 0.7;   // 80 = 5.0x on the HUD; ramp = units/s gained per second
+const ONC_K = 0.55;                                          // oncoming trucks drive toward you this much faster than the world scrolls
+const ONC_Z = PZ + (85 - PZ) * (1 + ONC_K);                  // spawn distance, so a truck arrives exactly when a normal row would
+let lastCoinLane = null;
 
 function newBuilding(b, z) {
   const cols = ['#3d2c5c', '#4a3470', '#2f2450', '#553a78', '#34285a'];
@@ -234,7 +238,7 @@ function reset() {
   P = { x: 0, lane: 0, py: 0, vy: 0, slide: 0, queue: false, t: 0, fall: 0 };
   C = { x: 0, z: PZ - COP_GAP, t: 0 };
   obstacles = []; coins = []; coinCount = 0; combo = 0; sirenT = 0; copSide = -1;
-  nextMilestone = MILESTONE; fx = []; fxMain = null;
+  nextMilestone = MILESTONE; fx = []; fxMain = null; lastCoinLane = null;
   initBuildings();
 }
 
@@ -285,6 +289,7 @@ const sfx = {
   win() { tone(660, 660, 0.1, 'square', 0.08); tone(880, 880, 0.1, 'square', 0.08, 0.1); tone(1175, 1175, 0.25, 'square', 0.08, 0.2); },
   lose() { tone(300, 150, 0.4, 'sawtooth', 0.1); },
   start() { tone(440, 440, 0.08, 'square', 0.07); tone(660, 660, 0.08, 'square', 0.07, 0.08); tone(880, 880, 0.14, 'square', 0.07, 0.16); },
+  horn() { tone(196, 196, 0.28, 'sawtooth', 0.06); tone(247, 247, 0.28, 'sawtooth', 0.05); },
   milestone() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.16, 'square', 0.06, i * 0.07)); },
   siren() { sirenHi = !sirenHi; const f = sirenHi ? 880 : 660; tone(f, f, 0.45, 'sine', 0.02); }
 };
@@ -719,17 +724,28 @@ function spawnRow() {
   const n = Math.random() < Math.min(0.15 + time * 0.01, 0.55) ? 2 : 1;
   const lanes = [-1, 0, 1].sort(() => Math.random() - 0.5);
   const types = ['low', 'low', 'high', 'high', 'block'];
+  // after ~10s some rows contain an oncoming truck (more often the longer you survive)
+  const truck = time > 10 && Math.random() < Math.min(0.1 + (time - 10) * 0.006, 0.35);
+  let truckLane = null;
+  if (truck) {
+    const idx = Math.max(0, lanes.findIndex(l => l !== lastCoinLane));
+    truckLane = lanes.splice(idx, 1)[0]; lanes.unshift(truckLane);
+  }
   let blockUsed = false;
   for (let i = 0; i < n; i++) {
+    if (truck && i === 0) { obstacles.push({ lane: truckLane, type: 'truck', z: ONC_Z, prev: ONC_Z, k: ONC_K, horned: false }); continue; }
     let t = types[(Math.random() * types.length) | 0];
     if (t === 'block' && blockUsed) t = 'low';
     if (t === 'block') blockUsed = true;
     obstacles.push({ lane: lanes[i], type: t, z: 85, prev: 85 });
   }
+  return truckLane;
 }
 // A line of coins placed halfway between this obstacle row and the next one
-function spawnCoins(gap) {
-  const lane = [-1, 0, 1][(Math.random() * 3) | 0];
+function spawnCoins(gap, avoidLane) {
+  const choices = [-1, 0, 1].filter(l => l !== avoidLane);
+  const lane = choices[(Math.random() * choices.length) | 0];
+  lastCoinLane = lane;
   const center = 85 + gap * 0.5;
   for (let i = -2; i <= 2; i++) coins.push({ lane, z: center + i * 2, prev: center + i * 2, got: false });
 }
@@ -790,8 +806,8 @@ function update(dt) {
     score += dt * (8 + speed * 0.3);
     P.x += (P.lane - P.x) * Math.min(1, dt * 14);
     physics(dt);
-    P.t += dt * speed / 16;
-    C.t += dt * speed / 16;
+    P.t += dt * Math.min(speed / 16, 2.6);
+    C.t += dt * Math.min(speed / 16, 2.6);
     // the cop runs in the lane right behind the runner, but far back
     C.x += (P.x - C.x) * Math.min(1, dt * 3);
     C.z = PZ - COP_GAP + Math.sin(time * 3) * 0.3;
@@ -800,14 +816,17 @@ function update(dt) {
 
     spawnDist -= speed * dt;
     if (spawnDist <= 0) {
-      spawnRow();
+      const truckLane = spawnRow();
       // rows get closer together the longer you survive
-      const gap = speed * (Math.max(0.7, 0.95 - time * 0.004) + Math.random() * 0.7) + 5;
+      const gap = speed * (Math.max(0.75, 0.95 - time * 0.004) + Math.random() * 0.7) + 5;
       spawnDist = gap;
-      if (Math.random() < 0.8) spawnCoins(gap);
+      if (Math.random() < 0.8) spawnCoins(gap, truckLane);
     }
 
-    for (const o of obstacles) { o.prev = o.z; o.z -= speed * dt; }
+    for (const o of obstacles) {
+      o.prev = o.z; o.z -= speed * dt * (1 + (o.k || 0));
+      if (o.k && !o.horned && o.z < 100) { o.horned = true; sfx.horn(); }
+    }
     obstacles = obstacles.filter(o => o.z > -4);
 
     for (const c of coins) { c.prev = c.z; c.z -= speed * dt; }
@@ -840,7 +859,7 @@ function update(dt) {
     C.x += ((P.x + 0.6) - C.x) * Math.min(1, dt * 8);
     C.t += dt * (C.z < PZ - 0.95 ? 1 : 0.2);
     scrollWorld(dt);
-    for (const o of obstacles) o.z -= speed * dt;
+    for (const o of obstacles) o.z -= speed * dt * (1 + (o.k || 0));
     for (const c of coins) c.z -= speed * dt;
     if (crashT > 1.1) gameOver();
   }
@@ -1057,6 +1076,28 @@ function drawObstacle(o) {
     ctx.fillStyle = '#1a1a1a';
     const n = 8, bw = w / n;
     for (let i = 0; i < n; i += 2) ctx.fillRect(cx - w / 2 + i * bw, y, bw, h);
+  } else if (o.type === 'truck') {
+    // front of a truck driving toward the player
+    const w = 0.96 * k, h = 1.5 * k, x = cx - w / 2, y = gy - h;
+    const on = Math.floor(performance.now() / 160) % 2;
+    ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x - 0.06 * k, gy - 0.04 * k, w + 0.12 * k, 0.08 * k);
+    ctx.fillStyle = '#111'; ctx.fillRect(x - 0.05 * k, gy - 0.3 * k, 0.1 * k, 0.3 * k); ctx.fillRect(x + w - 0.05 * k, gy - 0.3 * k, 0.1 * k, 0.3 * k);
+    ctx.fillStyle = '#c0392b'; ctx.fillRect(x, y, w, h - 0.1 * k);
+    ctx.fillStyle = '#e25b4b'; ctx.fillRect(x, y, w, 0.1 * k);
+    ctx.fillStyle = on ? '#ffb703' : '#7a5200';
+    for (let i = 0; i < 3; i++) ctx.fillRect(x + w * (0.25 + i * 0.22), y + 0.12 * k, 0.12 * k, 0.05 * k);
+    ctx.fillStyle = '#1b2a49'; ctx.fillRect(x + 0.08 * k, y + 0.2 * k, w - 0.16 * k, 0.46 * k);
+    ctx.fillStyle = 'rgba(255,255,255,.18)';
+    ctx.beginPath(); ctx.moveTo(x + 0.12 * k, y + 0.66 * k); ctx.lineTo(x + 0.4 * k, y + 0.2 * k); ctx.lineTo(x + 0.55 * k, y + 0.2 * k); ctx.lineTo(x + 0.27 * k, y + 0.66 * k); ctx.fill();
+    ctx.fillStyle = '#2b2b2f'; ctx.fillRect(x + 0.2 * k, y + 0.78 * k, w - 0.4 * k, 0.32 * k);
+    ctx.fillStyle = '#6d6d75'; for (let i = 0; i < 3; i++) ctx.fillRect(x + 0.2 * k, y + (0.83 + i * 0.09) * k, w - 0.4 * k, 0.025 * k);
+    for (const sd of [-1, 1]) {
+      const hx = cx + sd * (w / 2 - 0.15 * k), hy = y + 0.92 * k;
+      if (on) { ctx.fillStyle = 'rgba(255,255,200,.35)'; ctx.beginPath(); ctx.ellipse(hx, hy, 0.24 * k, 0.15 * k, 0, 0, 7); ctx.fill(); }
+      ctx.fillStyle = on ? '#fffbd0' : '#d9c85a'; ctx.beginPath(); ctx.arc(hx, hy, 0.08 * k, 0, 7); ctx.fill();
+    }
+    ctx.fillStyle = '#d8d8de'; ctx.fillRect(x - 0.02 * k, gy - 0.4 * k, w + 0.04 * k, 0.16 * k);
+    ctx.fillStyle = '#f2f2f2'; ctx.fillRect(cx - 0.1 * k, gy - 0.37 * k, 0.2 * k, 0.1 * k);
   } else {
     const w = 0.92 * k, h = 1.4 * k, x = cx - w / 2, y = gy - h;
     ctx.fillStyle = '#2c6fbb'; ctx.fillRect(x, y, w, h);
@@ -1171,6 +1212,24 @@ function drawCop() {
   person(x, gy, k, { pal: PAL_COP, mode: close && C.z > PZ - 1.4 ? 'grab' : 'run', t: C.t });
 }
 
+// flashing red triangle above the lane an oncoming truck is about to arrive in
+function drawWarnings() {
+  if (state !== 'play') return;
+  const flash = Math.floor(performance.now() / 120) % 2;
+  for (const o of obstacles) {
+    if (!o.k || o.z < 26) continue;
+    // sits on the road far ahead, near the horizon, in the lane the truck will arrive in
+    const ws = sc(65), x = sx(o.lane, ws), r = Math.max(10, H * 0.03), y = sy(ws) - r * 0.85;
+    ctx.fillStyle = 'rgba(255,59,48,.35)'; ctx.beginPath(); ctx.ellipse(x, sy(ws), r * 1.4, r * 0.3, 0, 0, 7); ctx.fill();
+    ctx.save(); ctx.globalAlpha = flash ? 1 : 0.5; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r * 1.1, y + r * 0.85); ctx.lineTo(x - r * 1.1, y + r * 0.85); ctx.closePath();
+    ctx.fillStyle = '#ff3b30'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(2, r * 0.14); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = '900 ' + Math.round(r * 1.25) + 'px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('!', x, y + r * 0.22);
+    ctx.restore();
+  }
+}
+
 function drawFx() {
   if (fxMain) {
     const t = fxMain.t;
@@ -1212,7 +1271,7 @@ function render() {
   drawBackground();
   const list = [];
   for (const b of B) list.push({ z: b.z, f: () => drawBuilding(b) });
-  for (const o of obstacles) list.push({ z: o.z, f: () => drawObstacle(o) });
+  for (const o of obstacles) if (o.z < ZMAX + 2) list.push({ z: o.z, f: () => drawObstacle(o) });
   for (const co of coins) list.push({ z: co.z, f: () => drawCoin(co) });
   list.push({ z: PZ, f: drawPlayer });
   // while chasing, the cop is drawn behind the runner so he never covers him
@@ -1232,6 +1291,7 @@ function render() {
   ctx.fillStyle = g; ctx.fillRect(W - wd, 0, wd, H);
 
   drawFx();
+  drawWarnings();
 
   // HUD
   if (state !== 'menu') {
