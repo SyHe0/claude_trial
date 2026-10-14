@@ -27,6 +27,26 @@
   #boardList li.empty{list-style:none;columns:1;}
   #boardNote{margin-top:6px;}
   #mute{position:fixed;right:12px;bottom:12px;z-index:10;width:44px;height:44px;margin:0;padding:0;border-radius:50%;font-size:20px;background:rgba(25,14,50,.85);border:2px solid #ff7a00;}
+  .coin{display:inline-block;width:14px;height:14px;border-radius:50%;background:#ffd23f;border:2px solid #c98a00;box-sizing:border-box;vertical-align:-2px;}
+  #bjBtn{position:fixed;left:0;top:50%;transform:translateY(-50%);z-index:6;margin:0;padding:14px 12px;font-size:18px;border-radius:0 12px 12px 0;background:#1f8a4c;border:2px solid #53d68a;border-left:0;box-shadow:2px 2px 12px rgba(0,0,0,.5);}
+  #bjBtn:hover{background:#27a85d;}
+  #bj{position:fixed;inset:0;z-index:5;display:none;align-items:center;justify-content:center;color:#fff;text-align:center;background:radial-gradient(ellipse at center,#16794a 0%,#0b4a2c 70%,#06301d 100%);overflow:auto;}
+  .bjwrap{width:min(560px,94vw);padding:14px 0;}
+  .bjtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+  .bjtop h2{margin:0;font-size:22px;letter-spacing:2px;color:#ffd98a;}
+  #bj button{margin:4px;font-size:16px;padding:10px 18px;border-radius:10px;}
+  #bj .chip{width:52px;height:52px;border-radius:50%;padding:0;background:#c0392b;border:4px dashed #fff;font-size:16px;}
+  #bj #bjClose{background:#3b2a66;margin:0;padding:8px 14px;}
+  #bj #bjHit{background:#2f80ed;} #bj #bjStand{background:#e67e22;} #bj #bjDouble{background:#8e44ad;}
+  #bj #bjClear,#bj #bjMax{background:#3b2a66;}
+  .bjwallet{font-size:18px;margin:6px 0 10px;}
+  .bjrow h3{margin:8px 0 4px;font-size:15px;letter-spacing:1px;color:#cfeedd;}
+  .hand{min-height:92px;display:flex;justify-content:center;gap:6px;flex-wrap:wrap;}
+  .pc{width:58px;height:84px;border-radius:8px;background:#fff;color:#111;font-weight:800;font-size:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 3px 8px rgba(0,0,0,.45);}
+  .pc.red{color:#d62828;}
+  .pc.back{background:repeating-linear-gradient(45deg,#8e2b2b,#8e2b2b 6px,#b13a3a 6px,#b13a3a 12px);border:3px solid #fff;box-sizing:border-box;}
+  #bjMsg{min-height:28px;font-size:20px;font-weight:700;color:#ffd98a;margin:10px 0;}
+  #bj small{color:#a7d9bd;}
 </style>
 </head>
 <body>
@@ -49,6 +69,7 @@
     </div>
     <button id="btn">START</button>
     <small id="who"></small>
+    <small id="walletLine"></small>
     <small>Press SPACE or ENTER &middot; M = mute &middot; On phones: swipe to move</small>
     <div id="board">
       <h2>TOP SCORES</h2>
@@ -58,6 +79,27 @@
   </div>
 </div>
 <button id="mute" title="Mute / unmute (M)">&#128266;</button>
+<button id="bjBtn" style="display:none" title="Play blackjack with your coins">&#127183; 21</button>
+<div id="bj">
+  <div class="bjwrap">
+    <div class="bjtop"><h2>BLACKJACK &middot; 21</h2><button id="bjClose">&larr; Back</button></div>
+    <div class="bjwallet">Wallet: <span class="coin"></span> <b id="bjWallet">0</b> &nbsp;&middot;&nbsp; Bet: <b id="bjBet">0</b></div>
+    <div class="bjrow"><h3>DEALER <span id="dTotal"></span></h3><div id="dealerHand" class="hand"></div></div>
+    <div id="bjMsg">Place your bet</div>
+    <div class="bjrow"><h3>YOU <span id="pTotal"></span></h3><div id="playerHand" class="hand"></div></div>
+    <div id="bjBetBtns">
+      <div>
+        <button class="chip" id="bjC1">1</button><button class="chip" id="bjC5">5</button><button class="chip" id="bjC10">10</button><button class="chip" id="bjC25">25</button>
+        <button id="bjClear">Clear</button><button id="bjMax">Max</button>
+      </div>
+      <button id="bjDeal">DEAL</button>
+    </div>
+    <div id="bjPlayBtns" style="display:none">
+      <button id="bjHit">HIT</button><button id="bjStand">STAND</button><button id="bjDouble">DOUBLE</button>
+    </div>
+    <small>Blackjack pays 3:2 &middot; dealer stands on 17 &middot; play money only<br>Keys: Enter = deal, H = hit, S = stand, D = double, Esc = back</small>
+  </div>
+</div>
 
 <script>
 (() => {
@@ -174,6 +216,9 @@ const sfx = {
   lane() { tone(420, 330, 0.06, 'triangle', 0.09); },
   crash() { noise(0.5, 0.3, 2000, 80); tone(180, 40, 0.5, 'sawtooth', 0.2); },
   busted() { tone(520, 520, 0.14, 'square', 0.09); tone(390, 390, 0.14, 'square', 0.09, 0.15); tone(260, 260, 0.35, 'square', 0.09, 0.3); },
+  card() { noise(0.08, 0.12, 4000, 800); },
+  win() { tone(660, 660, 0.1, 'square', 0.08); tone(880, 880, 0.1, 'square', 0.08, 0.1); tone(1175, 1175, 0.25, 'square', 0.08, 0.2); },
+  lose() { tone(300, 150, 0.4, 'sawtooth', 0.1); },
   start() { tone(440, 440, 0.08, 'square', 0.07); tone(660, 660, 0.08, 'square', 0.07, 0.08); tone(880, 880, 0.14, 'square', 0.07, 0.16); },
   siren() { sirenHi = !sirenHi; const f = sirenHi ? 880 : 660; tone(f, f, 0.45, 'sine', 0.02); }
 };
@@ -188,6 +233,7 @@ function updateNameUI() {
   btn.style.display = has ? '' : 'none';
   who.textContent = has ? 'Playing as ' + playerName : '';
   if (!has) setTimeout(() => nameInput.focus(), 50);
+  updateBjBtn();
 }
 function saveName() {
   const n = cleanName(nameInput.value);
@@ -260,6 +306,143 @@ function renderBoard(hl) {
     : 'Server not connected yet – showing scores from this device only';
 }
 
+// ---------- wallet + blackjack (play money only) ----------
+let wallet = 0;
+try { wallet = Math.max(0, parseInt(localStorage.getItem('copChaseWallet'), 10) || 0); } catch (e) {}
+const walletLine = document.getElementById('walletLine');
+const bjEl = document.getElementById('bj'), bjBtn = document.getElementById('bjBtn');
+function updateWalletUI() {
+  walletLine.innerHTML = 'Wallet: <span class="coin"></span> <b>' + wallet + '</b>';
+  document.getElementById('bjWallet').textContent = wallet;
+}
+function saveWallet() {
+  try { localStorage.setItem('copChaseWallet', String(wallet)); } catch (e) {}
+  updateWalletUI();
+}
+let bjOpen = false;
+const bj = { shoe: [], player: [], dealer: [], bet: 0, lastBet: 0, phase: 'bet', msg: 'Place your bet' };
+function bjShoe() {
+  const s = [];
+  for (let d = 0; d < 6; d++) for (const su of ['♠', '♥', '♦', '♣'])
+    for (const r of ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']) s.push({ r, su });
+  for (let i = s.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; const t = s[i]; s[i] = s[j]; s[j] = t; }
+  bj.shoe = s;
+}
+function bjDraw() { if (bj.shoe.length < 20) bjShoe(); return bj.shoe.pop(); }
+function handVal(h) {
+  let t = 0, aces = 0;
+  for (const c of h) {
+    if (c.r === 'A') { aces++; t += 11; }
+    else if (c.r === 'J' || c.r === 'Q' || c.r === 'K' || c.r === '10') t += 10;
+    else t += +c.r;
+  }
+  while (t > 21 && aces) { t -= 10; aces--; }
+  return t;
+}
+function cardHTML(c, hidden) {
+  if (hidden) return '<div class="pc back"></div>';
+  const red = c.su === '♥' || c.su === '♦';
+  return '<div class="pc' + (red ? ' red' : '') + '"><span>' + c.r + '</span><span>' + c.su + '</span></div>';
+}
+function bjRender() {
+  const playing = bj.phase === 'play';
+  document.getElementById('dealerHand').innerHTML = bj.dealer.map((c, i) => cardHTML(c, playing && i === 1)).join('');
+  document.getElementById('playerHand').innerHTML = bj.player.map(c => cardHTML(c)).join('');
+  document.getElementById('dTotal').textContent = bj.dealer.length && !playing ? '(' + handVal(bj.dealer) + ')' : '';
+  document.getElementById('pTotal').textContent = bj.player.length ? '(' + handVal(bj.player) + ')' : '';
+  document.getElementById('bjBet').textContent = bj.bet;
+  document.getElementById('bjWallet').textContent = wallet;
+  let msg = bj.msg;
+  if (!playing && wallet < 1 && bj.bet < 1) msg = 'Out of coins! Go back, run, and collect more.';
+  document.getElementById('bjMsg').textContent = msg;
+  document.getElementById('bjBetBtns').style.display = playing ? 'none' : 'block';
+  document.getElementById('bjPlayBtns').style.display = playing ? 'block' : 'none';
+  document.getElementById('bjDeal').textContent = bj.player.length ? 'DEAL AGAIN' : 'DEAL';
+  document.getElementById('bjDouble').style.display = (playing && bj.player.length === 2 && wallet >= bj.bet) ? '' : 'none';
+}
+function bjFinish(result, note) {
+  let pay = 0, msg;
+  if (result === 'win') { pay = bj.bet * 2; msg = 'You win +' + bj.bet; }
+  else if (result === 'blackjack') { const extra = Math.floor(bj.bet * 1.5); pay = bj.bet + extra; msg = 'BLACKJACK! +' + extra; }
+  else if (result === 'push') { pay = bj.bet; msg = 'Push – bet returned'; }
+  else msg = 'You lose −' + bj.bet;
+  wallet += pay;
+  if (result === 'win' || result === 'blackjack') sfx.win(); else if (result === 'lose') sfx.lose();
+  bj.msg = (note ? note + ' ' : '') + msg;
+  bj.phase = 'bet';
+  bj.bet = Math.min(bj.lastBet, wallet);
+  saveWallet(); bjRender();
+}
+function bjDeal() {
+  if (bj.phase !== 'bet' || bj.bet < 1 || bj.bet > wallet) return;
+  initAudio();
+  bj.lastBet = bj.bet; wallet -= bj.bet; saveWallet();
+  bj.player = [bjDraw(), bjDraw()]; bj.dealer = [bjDraw(), bjDraw()];
+  bj.phase = 'play'; sfx.card();
+  const pbj = handVal(bj.player) === 21, dbj = handVal(bj.dealer) === 21;
+  if (pbj || dbj) { bjFinish(pbj && dbj ? 'push' : pbj ? 'blackjack' : 'lose', dbj && !pbj ? 'Dealer has blackjack.' : ''); return; }
+  bj.msg = 'Hit, stand or double?';
+  bjRender();
+}
+function bjStand() {
+  if (bj.phase !== 'play') return;
+  while (handVal(bj.dealer) < 17) bj.dealer.push(bjDraw());
+  const pv = handVal(bj.player), dv = handVal(bj.dealer);
+  if (dv > 21) bjFinish('win', 'Dealer busts (' + dv + ').');
+  else if (pv > dv) bjFinish('win', pv + ' beats ' + dv + '.');
+  else if (pv < dv) bjFinish('lose', dv + ' beats ' + pv + '.');
+  else bjFinish('push', 'Both ' + pv + '.');
+}
+function bjHit() {
+  if (bj.phase !== 'play') return;
+  bj.player.push(bjDraw()); sfx.card();
+  const v = handVal(bj.player);
+  if (v > 21) bjFinish('lose', 'Bust (' + v + ').');
+  else if (v === 21) bjStand();
+  else bjRender();
+}
+function bjDouble() {
+  if (bj.phase !== 'play' || bj.player.length !== 2 || wallet < bj.bet) return;
+  wallet -= bj.bet; bj.bet *= 2; saveWallet();
+  bj.player.push(bjDraw()); sfx.card();
+  const v = handVal(bj.player);
+  if (v > 21) bjFinish('lose', 'Bust (' + v + ').'); else bjStand();
+}
+function updateBjBtn() {
+  bjBtn.style.display = (!bjOpen && playerName && (state === 'menu' || state === 'over')) ? 'block' : 'none';
+}
+function openBj() {
+  if (state === 'play' || state === 'caught') return;
+  bjOpen = true; bjEl.style.display = 'flex'; bjBtn.style.display = 'none';
+  if (bj.phase === 'bet' && bj.bet < 1) bj.bet = Math.min(5, wallet);
+  bjRender();
+}
+function closeBj() { bjOpen = false; bjEl.style.display = 'none'; updateBjBtn(); }
+function bjKey(e) {
+  const k = e.key;
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(k)) e.preventDefault();
+  if (e.repeat) return;
+  if (k === 'Escape') closeBj();
+  else if (k === 'Enter' || k === ' ') bjDeal();
+  else if (k === 'h' || k === 'H') bjHit();
+  else if (k === 's' || k === 'S') bjStand();
+  else if (k === 'd' || k === 'D') bjDouble();
+}
+for (const v of [1, 5, 10, 25]) {
+  document.getElementById('bjC' + v).addEventListener('click', () => {
+    if (bj.phase !== 'bet') return;
+    bj.bet = Math.min(wallet, bj.bet + v); bjRender();
+  });
+}
+document.getElementById('bjClear').addEventListener('click', () => { if (bj.phase === 'bet') { bj.bet = 0; bjRender(); } });
+document.getElementById('bjMax').addEventListener('click', () => { if (bj.phase === 'bet') { bj.bet = wallet; bjRender(); } });
+document.getElementById('bjDeal').addEventListener('click', bjDeal);
+document.getElementById('bjHit').addEventListener('click', bjHit);
+document.getElementById('bjStand').addEventListener('click', bjStand);
+document.getElementById('bjDouble').addEventListener('click', bjDouble);
+document.getElementById('bjClose').addEventListener('click', closeBj);
+bjBtn.addEventListener('click', openBj);
+
 // ---------- controls ----------
 function act(a) {
   if (state !== 'play') return;
@@ -270,15 +453,16 @@ function act(a) {
 }
 function startGame() {
   if (state === 'play' || state === 'caught') return;
-  if (!playerName) return;
+  if (!playerName || bjOpen) return;
   if (state === 'over' && performance.now() - overAt < 600) return;
   initAudio(); sfx.start();
-  reset(); state = 'play'; overlay.style.display = 'none';
+  reset(); state = 'play'; overlay.style.display = 'none'; updateBjBtn();
 }
 window.addEventListener('keydown', e => {
   // typing the name: don't treat keys as game controls
   if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') saveName(); return; }
   const k = e.key;
+  if (bjOpen) { bjKey(e); return; }
   if (k === 'm' || k === 'M') { initAudio(); toggleMute(); return; }
   initAudio();
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(k)) e.preventDefault();
@@ -343,12 +527,14 @@ function gameOver() {
   if (s > best) { best = s; try { localStorage.setItem('copChaseBest', best); } catch (e) {} }
   titleEl.textContent = 'BUSTED!';
   msgEl.className = '';
-  msgEl.innerHTML = 'The cop got you.<br><b style="font-size:26px;color:#ffb703">Score: ' + s + '</b><br>Coins: ' + coinCount + ' &middot; Best: ' + best;
+  wallet += coinCount; saveWallet();
+  msgEl.innerHTML = 'The cop got you.<br><b style="font-size:26px;color:#ffb703">Score: ' + s + '</b><br>Coins earned: +' + coinCount + ' &middot; Best: ' + best;
   btn.textContent = 'RUN AGAIN';
   sfx.busted();
   renderBoard(s);
   submitScore(s).then(() => renderBoard(s));
   overlay.style.display = 'flex';
+  updateBjBtn();
 }
 function update(dt) {
   if (state === 'menu') {
@@ -676,7 +862,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 window.addEventListener('resize', resize);
-resize(); makeSkyline(); reset(); updateNameUI(); loadBoard();
+resize(); makeSkyline(); reset(); updateWalletUI(); updateNameUI(); loadBoard();
 requestAnimationFrame(frame);
 })();
 </script>
