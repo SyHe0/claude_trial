@@ -341,7 +341,7 @@ function updateAuthUI() {
   updateBjBtn();
 }
 function loginAs(key, rec, pass) {
-  userKey = key; playerName = String(rec.name || key).slice(0, 12);
+  userKey = key; playerName = String((typeof rec.nick === 'string' && rec.nick.trim()) ? rec.nick : (rec.name || key)).slice(0, 12);
   wallet = Math.max(0, parseInt(rec.wallet, 10) || 0);
   best = Math.max(0, parseInt(rec.best, 10) || 0);
   owned = {};
@@ -411,7 +411,7 @@ function syncField(f) {
   syncChain = syncChain.then(async () => {
     if (k !== userKey) return;
     try {
-      const r = await fetch(userFieldUrl(k, f), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f === 'wallet' ? wallet : f === 'best' ? best : f === 'owned' ? owned : f === 'bg' ? curBg : f === 'copName' ? copName : f === 'char' ? curChar : tagOn) });
+      const r = await fetch(userFieldUrl(k, f), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f === 'wallet' ? wallet : f === 'best' ? best : f === 'owned' ? owned : f === 'bg' ? curBg : f === 'copName' ? copName : f === 'nick' ? playerName : f === 'char' ? curChar : tagOn) });
       if (r.ok) dirty.delete(f);
     } catch (e) {}
   });
@@ -664,6 +664,7 @@ function shRender() {
     else { b.textContent = tagOn ? 'TAKE OFF' : 'WEAR'; b.addEventListener('click', toggleTag); }
     card.appendChild(b); chEl.appendChild(card);
   }
+  shNickCard(chEl);
   shCopCard(chEl);
 }
 // ----- playable characters: the classic thief and KINGO -----
@@ -696,7 +697,41 @@ function equipChar(id) { curChar = id; syncField('char'); shMsg(''); shRender();
 
 // ----- rename the text on the cop's shirt (500 coins every time) -----
 const COP_PRICE = 500, BAD_NAME = /porno|porn|oç|burçak|doğa|doga|burcak/;
-let copEditing = false;
+let copEditing = false, nickEditing = false;
+// ----- change your own display name (500 coins every time; the login username never changes) -----
+function shNickCard(chEl) {
+  const pv = document.createElement('div'); pv.className = 'prev tagprev';
+  const pl = document.createElement('span'); pl.className = 'tagplate'; pl.textContent = playerName; pv.appendChild(pl);
+  const card = shCard(pv, 'Your Name', 'Change the name shown on the leaderboard and your name tag. Every change costs ' + COP_PRICE + ' coins. (Your login username stays the same.)', false);
+  if (nickEditing) {
+    const inp = document.createElement('input'); inp.id = 'nickInput'; inp.maxLength = 12; inp.placeholder = 'New name (3-12)'; inp.autocomplete = 'off'; inp.spellcheck = false;
+    const ok = document.createElement('button'); ok.innerHTML = 'CONFIRM ' + priceHTML(COP_PRICE); ok.addEventListener('click', () => applyNick(inp.value));
+    const no = document.createElement('button'); no.className = 'alt'; no.textContent = 'CANCEL';
+    no.addEventListener('click', () => { nickEditing = false; shMsg(''); shRender(); });
+    card.appendChild(inp); card.appendChild(ok); card.appendChild(no);
+    setTimeout(() => inp.focus(), 30);
+  } else {
+    const b = document.createElement('button');
+    b.innerHTML = 'CHANGE NAME ' + priceHTML(COP_PRICE);
+    if (wallet < COP_PRICE) b.className = 'alt';
+    b.addEventListener('click', () => {
+      if (wallet < COP_PRICE) { shMsg('Not enough coins \u2013 you need ' + (COP_PRICE - wallet) + ' more.'); return; }
+      nickEditing = true; copEditing = false; shMsg(''); shRender();
+    });
+    card.appendChild(b);
+  }
+  chEl.appendChild(card);
+}
+function applyNick(raw) {
+  const n = String(raw || '').replace(/[^\p{L}\p{N} _.!-]/gu, '').trim().slice(0, 12);
+  if (n.length < 3) { shMsg('Type a name (letters or numbers, 3-12 characters).'); return; }
+  if (BAD_NAME.test(n.toLowerCase())) { shMsg('That name is not allowed.'); return; }
+  if (n === playerName) { shMsg('That is already your name.'); return; }
+  if (wallet < COP_PRICE) { shMsg('Not enough coins \u2013 you need ' + (COP_PRICE - wallet) + ' more.'); return; }
+  wallet -= COP_PRICE; playerName = n; nickEditing = false;
+  saveWallet(); syncField('nick'); updateAuthUI();
+  initAudio(); sfx.win(); shMsg('Name changed!', true); shRender();
+}
 function shCopCard(chEl) {
   const pv = document.createElement('div'); pv.className = 'prev tagprev';
   const pl = document.createElement('span'); pl.className = 'copplate'; pl.textContent = (copName || 'POLICE').toUpperCase(); pv.appendChild(pl);
@@ -714,7 +749,7 @@ function shCopCard(chEl) {
     if (wallet < COP_PRICE) b.className = 'alt';
     b.addEventListener('click', () => {
       if (wallet < COP_PRICE) { shMsg('Not enough coins \u2013 you need ' + (COP_PRICE - wallet) + ' more.'); return; }
-      copEditing = true; shMsg(''); shRender();
+      copEditing = true; nickEditing = false; shMsg(''); shRender();
     });
     card.appendChild(b);
   }
@@ -745,7 +780,7 @@ function openShop() {
   if (state === 'play' || state === 'caught' || bjOpen) return;
   shopOpen = true; shopEl.style.display = 'block'; updateBjBtn(); shMsg(''); shRender();
 }
-function closeShop() { copEditing = false; shopOpen = false; shopEl.style.display = 'none'; updateBjBtn(); }
+function closeShop() { copEditing = false; nickEditing = false; shopOpen = false; shopEl.style.display = 'none'; updateBjBtn(); }
 shopBtn.addEventListener('click', openShop);
 document.getElementById('shopClose').addEventListener('click', closeShop);
 
@@ -766,7 +801,7 @@ function startGame() {
 }
 window.addEventListener('keydown', e => {
   // typing the name: don't treat keys as game controls
-  if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') { if (e.target.id === 'copInput') applyCopName(e.target.value); else submitAuth(); } return; }
+  if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') { if (e.target.id === 'copInput') applyCopName(e.target.value); else if (e.target.id === 'nickInput') applyNick(e.target.value); else submitAuth(); } return; }
   const k = e.key;
   if (bjOpen) { bjKey(e); return; }
   if (shopOpen) { if (k === 'Escape') closeShop(); return; }
