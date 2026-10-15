@@ -860,11 +860,15 @@ shopBtn.addEventListener('click', openShop);
 document.getElementById('shopClose').addEventListener('click', closeShop);
 
 // ---------- online 1v1 duel ----------
-// Both players type the same code. Each pays 500 coins and runs the SAME course once; the higher score wins 900, the loser gets 100.
-// Everything lives under /duels/<CODE> in the database: a / b = the two players (write-once), res/a, res/b = final scores (write-once).
-const DUEL_FEE = 500, DUEL_WIN = 900, DUEL_LOSE = 100, DUEL_KEY = 'copChaseDuel', DUEL_FORFEIT_MS = 240000;
+// Both players type the same code, each pays 500 coins and they start the SAME course at the SAME moment (a shared start time
+// taken from the database clock). Whoever survives LONGER wins 900, the loser gets 100.
+// When one player gets caught, the other wins the instant their own run time passes the caught player's time. If both started together
+// that is immediately; if one started late they have to keep running until they beat that time.
+// Everything lives under /duels/<CODE>: a / b = the two players (write-once, t = database clock), res/a, res/b = survival time in ms (write-once).
+const DUEL_FEE = 500, DUEL_WIN = 900, DUEL_LOSE = 100, DUEL_KEY = 'copChaseDuel', DUEL_FORFEIT_MS = 240000, DUEL_LEAD = 5000;
+const fmtMs = ms => (ms / 1000).toFixed(2) + 's';
 const duelEl = document.getElementById('duel'), duelBtn = document.getElementById('duelBtn'), duBody = document.getElementById('duBody'), duMsgEl = document.getElementById('duMsg');
-let duelOpen = false, duel = null, duelTimer = 0, duelBusy = false;
+let duelOpen = false, duel = null, duelTimer = 0, duelBusy = false, duLiveTimer = 0;
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const duUrl = (code, path) => boardBase() + '/duels/' + code + (path ? '/' + path : '') + '.json';
 const duMsg = (t, good) => { duMsgEl.textContent = t || ''; duMsgEl.style.color = good ? '#7dff9e' : '#ff8a8a'; };
@@ -896,13 +900,13 @@ function duRender() {
   const closeBtn = document.getElementById('duelClose');
   closeBtn.style.display = (!duel || duel.phase === 'result') ? '' : 'none';
   if (!duel) {
-    duBody.appendChild(duEl('p', '', 'Challenge a friend! You both enter the same code, then each of you runs the same course once. The higher score wins.'));
+    duBody.appendChild(duEl('p', '', 'Challenge a friend! You both enter the same code and run the same course at the same moment. Whoever survives longer wins \u2013 when one of you gets caught, the other wins as soon as they have lasted longer.'));
     duRules(duBody);
     const inp = duEl('input'); inp.id = 'duelInput'; inp.maxLength = 12; inp.placeholder = 'DUEL CODE'; inp.autocomplete = 'off'; inp.spellcheck = false; inp.autocapitalize = 'characters';
     duBody.appendChild(inp);
     const b = duEl('button'); b.innerHTML = 'JOIN DUEL ' + priceHTML(DUEL_FEE); if (wallet < DUEL_FEE) b.className = 'alt';
     b.addEventListener('click', joinDuel); duBody.appendChild(b);
-    duBody.appendChild(duEl('small', '', 'Pick any code (3-12 letters/numbers) and send it to your friend. Whoever enters first waits, the second one starts the duel.'));
+    duBody.appendChild(duEl('small', '', 'Pick any code (3-12 letters/numbers) and send it to your friend. Whoever enters first waits, then you both start together.'));
     setTimeout(() => inp.focus(), 30);
     return;
   }
@@ -915,11 +919,11 @@ function duRender() {
   } else if (ph === 'countdown') {
     duBody.appendChild(duEl('p', '', 'Duel vs ' + (duel.oppName || '?')));
     duBody.appendChild(duEl('div', 'big', String(Math.max(1, duel.count))));
-    duBody.appendChild(duEl('p', '', 'Get ready – one run, highest score wins!'));
+    duBody.appendChild(duEl('p', '', 'Get ready \u2013 you both start together. Survive longer than your opponent!'));
   } else if (ph === 'waitres') {
-    duBody.appendChild(duEl('p', '', 'Your score'));
-    duBody.appendChild(duEl('div', 'res', String(duel.myScore)));
-    duBody.appendChild(duEl('p', '', 'Waiting for your opponent to finish their run…'));
+    duBody.appendChild(duEl('p', '', 'You survived'));
+    duBody.appendChild(duEl('div', 'res', fmtMs(duel.myScore)));
+    duBody.appendChild(duEl('p', '', 'Waiting for your opponent \u2013 they win the moment they last longer than this.'));
     if (Date.now() - duel.since > DUEL_FORFEIT_MS) {
       const f = duEl('button', 'alt', 'OPPONENT LEFT? CLAIM WIN'); f.addEventListener('click', duForfeit); duBody.appendChild(f);
     }
@@ -927,8 +931,8 @@ function duRender() {
     const t = duel.outcome === 'win' ? 'YOU WIN!' : duel.outcome === 'lose' ? 'YOU LOSE' : 'TIE';
     const r = duEl('div', 'res', t); r.style.color = duel.outcome === 'win' ? '#7dff9e' : duel.outcome === 'lose' ? '#ff8a8a' : '#ffd98a'; duBody.appendChild(r);
     const vs = duEl('div', 'vs');
-    const m = duEl('div', '', 'You'); m.appendChild(duEl('b', '', duel.myScore < 0 ? 'forfeit' : String(duel.myScore)));
-    const o = duEl('div', '', duel.oppName || 'Opponent'); o.appendChild(duEl('b', '', duel.oppScore < 0 ? 'left' : String(duel.oppScore)));
+    const m = duEl('div', '', 'You'); m.appendChild(duEl('b', '', duel.myScore < 0 ? 'forfeit' : fmtMs(duel.myScore)));
+    const o = duEl('div', '', duel.oppName || 'Opponent'); o.appendChild(duEl('b', '', duel.oppScore < 0 ? 'left' : fmtMs(duel.oppScore)));
     vs.appendChild(m); vs.appendChild(o); duBody.appendChild(vs);
     duBody.appendChild(duEl('p', '', duel.outcome === 'tie' ? 'Tie – your ' + DUEL_FEE + ' coins are returned.' : 'You received ' + duel.pay + ' coins.'));
     const c = duEl('button', '', 'CLOSE'); c.addEventListener('click', closeDuel); duBody.appendChild(c);
@@ -942,7 +946,7 @@ function openDuel() {
 }
 function closeDuel() {
   if (duel && duel.phase !== 'result') return;
-  duStopTimer(); duel = null; duSave(); duelOpen = false; rng = Math.random; updateDuelUI();
+  duStopTimer(); duStopLive(); duel = null; duSave(); duelOpen = false; rng = Math.random; updateDuelUI();
 }
 async function joinDuel() {
   if (duelBusy) return;
@@ -956,12 +960,18 @@ async function joinDuel() {
     if (room && ((room.a && room.a.u === userKey) || (room.b && room.b.u === userKey))) { duMsg('You already used this code. Pick a new one.'); return; }
     if (room && room.res && room.res.a !== undefined && room.res.b !== undefined) { duMsg('That code was already used. Pick a new one.'); return; }
     if (room && room.a && room.b) { duMsg('That room is full. Pick another code.'); return; }
-    const me = { u: userKey, n: playerName, t: Date.now() };
-    let slot = null;
-    for (const s of (room && room.a ? ['b'] : ['a', 'b'])) { if (await duPut(code, s, me)) { slot = s; break; } }   // the database only lets ONE player take each slot
+    const me = { u: userKey, n: playerName, t: { '.sv': 'timestamp' } };   // t = the database's own clock
+    let slot = null, wroteAt = 0;
+    for (const s of (room && room.a ? ['b'] : ['a', 'b'])) {   // the database only lets ONE player take each slot
+      const p0 = Date.now();
+      if (await duPut(code, s, me)) { slot = s; wroteAt = (p0 + Date.now()) / 2; break; }
+    }
     if (!slot) { duMsg('That room just filled up. Pick another code.'); return; }
+    // how far this device's clock is from the database clock (so both players can start at the same real moment)
+    let clockOff;
+    try { const st = await duGet(code, slot + '/t'); if (typeof st === 'number') clockOff = st - wroteAt; } catch (e) {}
     wallet -= DUEL_FEE; saveWallet();
-    duel = { code, slot, phase: 'waiting', myScore: null, seed: 0, oppName: '', since: 0 };
+    duel = { code, slot, phase: 'waiting', myScore: null, seed: 0, oppName: '', since: 0, clockOff };
     duSave(); duMsg(''); duRender(); duPoll();
   } catch (e) { duMsg('Could not reach the server. Try again.'); }
   finally { duelBusy = false; }
@@ -976,7 +986,7 @@ async function duCancel() {
   } catch (e) { duMsg('Could not reach the server.'); }
   duelBusy = false;
 }
-function duPoll() { duStopTimer(); duelTimer = setInterval(duTick, 1200); duTick(); }
+function duPoll() { duStopTimer(); duelTimer = setInterval(duTick, 800); duTick(); }
 async function duTick() {
   if (!duel) return;
   const myDuel = duel;
@@ -989,6 +999,9 @@ async function duTick() {
         duel.oppName = String(opp.n || '?').slice(0, 12);
         let h = 0; for (const ch of duel.code) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
         duel.seed = h ^ (Math.floor(room.a.t || 1) % 2147483647);
+        // both start DUEL_LEAD ms after the second player joined, measured on the database clock
+        const startServer = Math.max(+room.a.t || 0, +room.b.t || 0) + DUEL_LEAD;
+        duel.startAt = duel.clockOff === undefined ? 0 : Math.min(startServer - duel.clockOff, Date.now() + DUEL_LEAD + 1500);
         duStartCountdown();
       }
     } else if (duel.phase === 'waitres') {
@@ -1001,21 +1014,52 @@ async function duTick() {
   } catch (e) { /* network hiccup: next tick tries again */ }
 }
 function duStartCountdown() {
-  duStopTimer(); duel.phase = 'countdown'; duel.count = 3; duSave(); duMsg(''); duRender(); initAudio(); sfx.lane();
+  duStopTimer(); duel.phase = 'countdown'; duSave(); duMsg('');
+  const left = () => Math.max(0, duel.startAt - Date.now());
+  duel.count = Math.max(1, Math.ceil(left() / 1000));
+  duRender(); initAudio(); sfx.lane();
   duelTimer = setInterval(() => {
     if (!duel) { duStopTimer(); return; }
-    duel.count--;
-    if (duel.count <= 0) { duStopTimer(); beginDuelRun(); } else { duRender(); initAudio(); sfx.lane(); }
-  }, 1000);
+    const ms = left();
+    if (ms <= 0) { duStopTimer(); beginDuelRun(); return; }
+    const c = Math.ceil(ms / 1000);
+    if (c !== duel.count) { duel.count = c; duRender(); initAudio(); sfx.lane(); }
+  }, 40);
 }
 function beginDuelRun() {
-  duel.phase = 'playing'; duSave();
+  duel.phase = 'playing'; duel.oppTime = undefined; duel.runMs = undefined; duSave();
   duelOpen = false; updateDuelUI();
   rng = mulberry32(duel.seed);
   initAudio(); sfx.start();
   reset(); state = 'play'; overlay.style.display = 'none'; updateBjBtn();
+  duStartLive();
+}
+// while running: keep asking whether the opponent has been caught (their survival time shows up in res/<other>)
+function duStopLive() { if (duLiveTimer) clearInterval(duLiveTimer); duLiveTimer = 0; }
+function duStartLive() {
+  duStopLive();
+  const myDuel = duel, url = duUrl(duel.code, 'res/' + duOther());
+  duLiveTimer = setInterval(async () => {
+    if (duel !== myDuel || duel.phase !== 'playing') { duStopLive(); return; }
+    try {
+      const r = await fetch(url);
+      if (!r.ok) return;
+      const v = await r.json();
+      if (duel === myDuel && duel.phase === 'playing' && typeof v === 'number') { duel.oppTime = v; duStopLive(); }
+    } catch (e) { /* try again next tick */ }
+  }, 500);
+}
+// tell the database how long I survived (write-once, so the first value is final)
+function duSendTime(ms) { if (duel) duPut(duel.code, 'res/' + duel.slot, ms).catch(() => {}); }
+// the opponent was caught earlier and my run time has now passed theirs: I win, my run ends right here
+function duOutlast() {
+  const ms = Math.max(Math.round(time * 1000), duel.oppTime + 1);
+  duel.runMs = ms;
+  duSendTime(ms);
+  gameOver(true);
 }
 async function duFinishRun(s) {
+  duStopLive();
   duel.myScore = s; duel.phase = 'waitres'; duel.since = Date.now(); duSave();
   duelOpen = true; duMsg(''); updateDuelUI(); duRender();
   try { await duPut(duel.code, 'res/' + duel.slot, s); } catch (e) {}
@@ -1027,7 +1071,7 @@ async function duForfeit() {
 }
 function duSettle(res) {
   if (!duel || duel.phase === 'result') return;
-  duStopTimer();
+  duStopTimer(); duStopLive();
   const me = res[duel.slot], opp = res[duOther()];
   duel.myScore = me; duel.oppScore = opp;
   duel.outcome = me > opp ? 'win' : me < opp ? 'lose' : 'tie';
@@ -1046,7 +1090,7 @@ function duResume() {
   if (!sv || sv.k !== userKey || !sv.code || (sv.slot !== 'a' && sv.slot !== 'b')) return;
   duel = { code: sv.code, slot: sv.slot, phase: sv.phase, myScore: sv.score, seed: 0, oppName: '', since: Date.now() };
   duelOpen = true; updateDuelUI();
-  if (duel.phase === 'playing') { duFinishRun(0); return; }   // left in the middle of a run = score 0
+  if (duel.phase === 'playing') { duFinishRun(0); return; }   // left in the middle of a run = survived 0 seconds
   if (duel.phase !== 'waitres') duel.phase = 'waiting';
   duRender(); duPoll();
 }
@@ -1144,6 +1188,7 @@ function scrollWorld(dt) {
 }
 function crash() {
   state = 'caught'; crashT = 0; P.queue = false; sfx.crash();
+  if (duel && duel.phase === 'playing') duSendTime(Math.round(time * 1000));   // duel: the opponent finds out immediately
 }
 // KINGO smashes an obstacle: it spins off the top of the screen, the run goes on
 function smashHit(o) {
@@ -1158,21 +1203,21 @@ function smashHit(o) {
   pop = { t: 0, text: 'KINGO SMASH!' };
   sfx.smash();
 }
-function gameOver() {
+function gameOver(outlasted) {
   state = 'over'; overAt = performance.now();
   const s = Math.floor(score);
   if (s > best) { best = s; syncField('best'); }
-  titleEl.textContent = 'BUSTED!';
+  titleEl.textContent = outlasted ? 'DUEL WON!' : 'BUSTED!';
   msgEl.className = '';
   wallet += coinCount; saveWallet();
-  msgEl.innerHTML = 'The cop got you.<br><b style="font-size:26px;color:#ffb703">Score: ' + s + '</b><br>Coins earned: +' + coinCount + ' &middot; Best: ' + best;
+  msgEl.innerHTML = (outlasted ? 'Your opponent got caught first.' : 'The cop got you.') + '<br><b style="font-size:26px;color:#ffb703">Score: ' + s + '</b><br>Coins earned: +' + coinCount + ' &middot; Best: ' + best;
   btn.textContent = 'RUN AGAIN';
-  sfx.busted();
+  if (!outlasted) sfx.busted();
   renderBoard(s);
   submitScore(s).then(() => renderBoard(s));
   overlay.style.display = 'flex';
   updateBjBtn();
-  if (duel && duel.phase === 'playing') duFinishRun(s);
+  if (duel && duel.phase === 'playing') duFinishRun(duel.runMs !== undefined ? duel.runMs : Math.round(time * 1000));   // duel result = survival time in ms
 }
 function burstFx(m) {
   const cols = ['#ff4d6d', '#ffd23f', '#4dd0ff', '#7cff6b', '#c77dff', '#ff9f1c', '#ffffff'];
@@ -1252,6 +1297,8 @@ function update(dt) {
         }
       }
     }
+    // duel: the opponent is already caught and I have now survived longer than they did
+    if (state === 'play' && duel && duel.phase === 'playing' && duel.oppTime !== undefined && time * 1000 > duel.oppTime) duOutlast();
   } else if (state === 'caught') {
     crashT += dt;
     speed = Math.max(0, speed - 70 * dt);
@@ -1758,6 +1805,14 @@ function render() {
       if (curChar === 'kingo') {
         ctx.fillStyle = P.shield > 0 ? '#7cff6b' : '#a09ab8';
         ctx.fillText(P.shield > 0 ? 'KINGO SHIELD READY' : 'SHIELD USED', W - 16, 14 + fs * 2.5);
+      }
+    }
+    if (duel && duel.phase === 'playing') {
+      ctx.textAlign = 'center'; ctx.fillStyle = '#ffd98a';
+      ctx.fillText('DUEL vs ' + (duel.oppName || '?') + '  ' + time.toFixed(1) + 's', CX, 14 + fs * 3.8);
+      if (duel.oppTime !== undefined) {
+        ctx.fillStyle = '#ff8a8a';
+        ctx.fillText(duel.oppTime < 0 ? 'Opponent left' : 'Opponent out at ' + (duel.oppTime / 1000).toFixed(1) + 's', CX, 14 + fs * 5);
       }
     }
     if (state === 'caught') {
