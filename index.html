@@ -248,7 +248,8 @@ const logoutBtn = document.getElementById('logoutBtn');
 const who = document.getElementById('who');
 
 // ---------- layout / projection ----------
-const ZMAX = 90, D = 14;
+const ZMAX = 160, D = 14;
+const SPAWN_Z = 100;   // where obstacles/coins appear (just past the visible crest)
 const PZ = 9;          // distance of the runner from the camera
 const COP_GAP = 9.5;   // how far behind the runner the cop chases
 const CAM_U = 0.25, CAM_HY = 0.13, CAM_GY = 0.90;
@@ -305,7 +306,7 @@ let nextMilestone = MILESTONE, fx = [], fxMain = null, pop = null;
 const JUMP_V = 7.6, GRAV = 22;
 const SPEED_START = 16, SPEED_MAX = 80, SPEED_RAMP = 0.7;
 const ONC_K = 0.55;
-const ONC_Z = PZ + (85 - PZ) * (1 + ONC_K);
+const ONC_Z = PZ + (SPAWN_Z - PZ) * (1 + ONC_K);
 let lastCoinLane = null;
 let rng = Math.random;
 
@@ -1422,7 +1423,7 @@ function spawnRow() {
     let t = types[(rng() * types.length) | 0];
     if (t === 'block' && blockUsed) t = 'low';
     if (t === 'block') blockUsed = true;
-    obstacles.push({ lane: lanes[i], type: t, z: 85, prev: 85 });
+    obstacles.push({ lane: lanes[i], type: t, z: SPAWN_Z, prev: SPAWN_Z });
   }
   return truckLane;
 }
@@ -1430,7 +1431,7 @@ function spawnCoins(gap, avoidLane) {
   const choices = [-1, 0, 1].filter(l => l !== avoidLane);
   const lane = choices[(rng() * choices.length) | 0];
   lastCoinLane = lane;
-  const center = 85 + gap * 0.5;
+  const center = SPAWN_Z + gap * 0.5;
   for (let i = -2; i <= 2; i++) coins.push({ lane, z: center + i * 2, prev: center + i * 2, got: false });
 }
 
@@ -1600,7 +1601,7 @@ function roadQuad(x0, x1, za, zb, color) {
     ctx.closePath(); ctx.fill();
   }
 }
-const fog = z => { const f0 = ZV - 22; return z > f0 ? Math.max(0, (ZV - z) / 22) : 1; };
+const fog = z => { const f0 = ZV - 14; return z > f0 ? Math.max(0, (ZV - z) / 14) : 1; };
 
 const THEMES = {
   default: { name: 'Sunset City', desc: 'The classic purple sunset.', price: 0, style: 'city', hz: 'city', clouds: false,
@@ -1635,8 +1636,8 @@ function drawClouds() {
 function drawWaves() {
   const wt = dist * 0.4 + performance.now() / 1000 * 1.5;
   ctx.fillStyle = 'rgba(255,255,255,.3)';
-  for (let j = 0; j < 16; j++) {
-    const z = 3 + ((j * 6 + wt) % 86); if (z >= ZV) continue; const s = sc(z), y = sy(s);
+  for (let j = 0; j < 26; j++) {
+    const z = 3 + ((j * 6 + wt) % 156); if (z >= ZV) continue; const s = sc(z), y = sy(s);
     ctx.globalAlpha = fog(z) * 0.9;
     for (let q = 0; q < 6; q++) {
       const x = (((j * 53 + q * 89) % 100) / 100) * W, w = (0.5 + ((j * 7 + q) % 5) * 0.15) * U * s * 1.4;
@@ -2073,7 +2074,7 @@ function drawWarnings() {
   const flash = Math.floor(performance.now() / 120) % 2;
   for (const o of obstacles) {
     if (!o.k || o.z < 26) continue;
-    const ws = sc(Math.min(65, ZV - 6)), x = sx(o.lane, ws), r = Math.max(8, H * 0.022), y = sy(ws) - r * 0.85;
+    const ws = sc(Math.min(65, ZV - 6)), x = sx(o.lane, ws), r = Math.max(4, H * 0.011), y = sy(ws) - r * 0.85;
     ctx.fillStyle = 'rgba(255,59,48,.35)'; ctx.beginPath(); ctx.ellipse(x, sy(ws), r * 1.4, r * 0.3, 0, 0, 7); ctx.fill();
     ctx.save(); ctx.globalAlpha = flash ? 1 : 0.5; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r * 1.1, y + r * 0.85); ctx.lineTo(x - r * 1.1, y + r * 0.85); ctx.closePath();
