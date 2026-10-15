@@ -69,6 +69,23 @@
   .shcard input{display:block;box-sizing:border-box;width:100%;font-size:16px;padding:8px 10px;margin-top:6px;border-radius:8px;border:2px solid #4a3a7a;background:#1b1036;color:#fff;text-align:center;outline:none;}
   .shcard input:focus{border-color:#ff7a00;}
   .copplate{background:#1f4aa8;color:#ffd60a;font-weight:800;border-radius:6px;padding:6px 14px;font-size:16px;letter-spacing:1px;max-width:90%;overflow:hidden;text-overflow:ellipsis;}
+  #duelBtn{position:fixed;left:0;top:calc(50% + 62px);z-index:6;margin:0;padding:14px 12px;font-size:18px;border-radius:0 12px 12px 0;background:#c0392b;border:2px solid #ff8f84;border-left:0;box-shadow:2px 2px 12px rgba(0,0,0,.5);}
+  #duelBtn:hover{background:#e04a3a;}
+  #duel{position:fixed;inset:0;z-index:8;display:none;color:#fff;text-align:center;background:radial-gradient(ellipse at center,#5a1230 0%,#2a0a1c 75%,#14040d 100%);overflow:auto;}
+  #duel .shtop h2{color:#ffd98a;}
+  #duel #duelClose{background:#3b2a66;margin:0;padding:8px 14px;font-size:16px;}
+  .dubox{background:rgba(255,255,255,.07);border:2px solid #7a3a52;border-radius:14px;padding:18px 16px;margin-top:10px;}
+  .dubox p{margin:6px 0;color:#f0d9e2;}
+  .dubox .rules{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:12px 0;}
+  .dubox .rules span{background:rgba(0,0,0,.3);border-radius:8px;padding:6px 10px;font-size:14px;}
+  .dubox input{display:block;box-sizing:border-box;width:min(280px,90%);font-size:22px;letter-spacing:3px;text-transform:uppercase;padding:10px 14px;margin:12px auto 0;border-radius:10px;border:2px solid #7a3a52;background:#1b0b14;color:#fff;text-align:center;outline:none;}
+  .dubox input:focus{border-color:#ff7a00;}
+  .dubox .big{font-size:84px;font-weight:900;color:#ffd23f;margin:10px 0;}
+  .dubox .res{font-size:34px;font-weight:900;margin:6px 0;}
+  .dubox .vs{display:flex;justify-content:center;gap:18px;margin:12px 0;flex-wrap:wrap;}
+  .dubox .vs div{background:rgba(0,0,0,.3);border-radius:10px;padding:8px 16px;min-width:110px;}
+  .dubox .vs b{display:block;font-size:26px;color:#ffd98a;}
+  #duMsg{display:block;min-height:20px;margin-top:14px;font-size:15px;}
   #bj{position:fixed;inset:0;z-index:5;display:none;align-items:center;justify-content:center;color:#fff;text-align:center;background:radial-gradient(ellipse at center,#16794a 0%,#0b4a2c 70%,#06301d 100%);overflow:auto;}
   .bjwrap{width:min(560px,94vw);padding:14px 0;}
   .bjtop{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
@@ -133,6 +150,15 @@
 <button id="mute" title="Mute / unmute (M)">&#128266;</button>
 <button id="bjBtn" style="display:none" title="Play blackjack with your coins">&#127183; 21</button>
 <button id="shopBtn" style="display:none" title="Spend your coins in the shop">&#128722; SHOP</button>
+<button id="duelBtn" style="display:none" title="Play a 1v1 online duel for coins">&#9876; DUEL</button>
+<div id="duel">
+  <div class="shwrap">
+    <div class="shtop"><h2>ONLINE DUEL</h2><button id="duelClose">&larr; Back</button></div>
+    <div class="bjwallet">Wallet: <span class="coin"></span> <b id="duWallet">0</b></div>
+    <div class="dubox" id="duBody"></div>
+    <small id="duMsg"></small>
+  </div>
+</div>
 <div id="shop">
   <div class="shwrap">
     <div class="shtop"><h2>SHOP</h2><button id="shopClose">&larr; Back</button></div>
@@ -254,6 +280,7 @@ const SPEED_START = 16, SPEED_MAX = 80, SPEED_RAMP = 0.7;   // 80 = 5.0x on the 
 const ONC_K = 0.55;                                          // oncoming trucks drive toward you this much faster than the world scrolls
 const ONC_Z = PZ + (85 - PZ) * (1 + ONC_K);                  // spawn distance, so a truck arrives exactly when a normal row would
 let lastCoinLane = null;
+let rng = Math.random;   // obstacle course randomness (seeded in a duel so both players get the same course)
 // KINGO (shop character): 4.0x top speed instead of 5.0x, and one free obstacle hit per run
 const KINGO_PRICE = 5000, KINGO_MAX = 64;                    // 64 = 4.0x on the HUD
 const maxSpeed = () => (curChar === 'kingo' ? KINGO_MAX : SPEED_MAX);
@@ -385,6 +412,7 @@ function loginAs(key, rec, pass) {
   try { localStorage.setItem(SESSION_KEY, JSON.stringify({ k: key, p: pass })); } catch (e) {}
   showAuthChoice(); updateAuthUI(); updateWalletUI();
   titleEl.textContent = 'COP CHASE RUN'; btn.textContent = 'START';
+  setTimeout(duResume, 400);
 }
 function logout() {
   if (state === 'play' || state === 'caught') return;
@@ -618,9 +646,10 @@ function bjDouble() {
   if (v > 21) bjFinish('lose', 'Bust (' + v + ').'); else bjStand();
 }
 function updateBjBtn() {
-  const show = !bjOpen && !shopOpen && playerName && (state === 'menu' || state === 'over');
+  const show = !bjOpen && !shopOpen && !duelOpen && playerName && (state === 'menu' || state === 'over');
   bjBtn.style.display = show ? 'block' : 'none';
   shopBtn.style.display = show ? 'block' : 'none';
+  duelBtn.style.display = show ? 'block' : 'none';
 }
 function openBj() {
   if (state === 'play' || state === 'caught' || shopOpen) return;
@@ -830,6 +859,200 @@ function closeShop() { copEditing = false; nickEditing = false; shopOpen = false
 shopBtn.addEventListener('click', openShop);
 document.getElementById('shopClose').addEventListener('click', closeShop);
 
+// ---------- online 1v1 duel ----------
+// Both players type the same code. Each pays 500 coins and runs the SAME course once; the higher score wins 900, the loser gets 100.
+// Everything lives under /duels/<CODE> in the database: a / b = the two players (write-once), res/a, res/b = final scores (write-once).
+const DUEL_FEE = 500, DUEL_WIN = 900, DUEL_LOSE = 100, DUEL_KEY = 'copChaseDuel', DUEL_FORFEIT_MS = 240000;
+const duelEl = document.getElementById('duel'), duelBtn = document.getElementById('duelBtn'), duBody = document.getElementById('duBody'), duMsgEl = document.getElementById('duMsg');
+let duelOpen = false, duel = null, duelTimer = 0, duelBusy = false;
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const duUrl = (code, path) => boardBase() + '/duels/' + code + (path ? '/' + path : '') + '.json';
+const duMsg = (t, good) => { duMsgEl.textContent = t || ''; duMsgEl.style.color = good ? '#7dff9e' : '#ff8a8a'; };
+async function duGet(code, path) { const r = await fetch(duUrl(code, path)); if (!r.ok) throw new Error('http ' + r.status); return r.json(); }
+// resolves false when the database refuses (slot / score already taken), throws when the network is down
+async function duPut(code, path, val) {
+  const r = await fetch(duUrl(code, path), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(val) });
+  return r.ok;
+}
+function duSave() {
+  try {
+    if (duel) localStorage.setItem(DUEL_KEY, JSON.stringify({ k: userKey, code: duel.code, slot: duel.slot, phase: duel.phase, score: duel.myScore }));
+    else localStorage.removeItem(DUEL_KEY);
+  } catch (e) {}
+}
+const duOther = () => (duel.slot === 'a' ? 'b' : 'a');
+function duStopTimer() { if (duelTimer) clearInterval(duelTimer); duelTimer = 0; }
+function duEl(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+function duRules(parent) {
+  const r = duEl('div', 'rules');
+  r.appendChild(duEl('span', '', 'Entry: ' + DUEL_FEE + ' coins'));
+  r.appendChild(duEl('span', '', 'Winner gets: ' + DUEL_WIN));
+  r.appendChild(duEl('span', '', 'Loser gets: ' + DUEL_LOSE));
+  parent.appendChild(r);
+}
+function duRender() {
+  document.getElementById('duWallet').textContent = wallet;
+  duBody.textContent = '';
+  const closeBtn = document.getElementById('duelClose');
+  closeBtn.style.display = (!duel || duel.phase === 'result') ? '' : 'none';
+  if (!duel) {
+    duBody.appendChild(duEl('p', '', 'Challenge a friend! You both enter the same code, then each of you runs the same course once. The higher score wins.'));
+    duRules(duBody);
+    const inp = duEl('input'); inp.id = 'duelInput'; inp.maxLength = 12; inp.placeholder = 'DUEL CODE'; inp.autocomplete = 'off'; inp.spellcheck = false; inp.autocapitalize = 'characters';
+    duBody.appendChild(inp);
+    const b = duEl('button'); b.innerHTML = 'JOIN DUEL ' + priceHTML(DUEL_FEE); if (wallet < DUEL_FEE) b.className = 'alt';
+    b.addEventListener('click', joinDuel); duBody.appendChild(b);
+    duBody.appendChild(duEl('small', '', 'Pick any code (3-12 letters/numbers) and send it to your friend. Whoever enters first waits, the second one starts the duel.'));
+    setTimeout(() => inp.focus(), 30);
+    return;
+  }
+  const ph = duel.phase;
+  if (ph === 'waiting') {
+    duBody.appendChild(duEl('p', '', 'Code: ' + duel.code));
+    duBody.appendChild(duEl('p', '', 'Waiting for your opponent to enter the same code…'));
+    duBody.appendChild(duEl('p', '', 'Your ' + DUEL_FEE + ' coins are in the pot.'));
+    if (duel.slot === 'a') { const c = duEl('button', 'alt', 'CANCEL (refund)'); c.addEventListener('click', duCancel); duBody.appendChild(c); }
+  } else if (ph === 'countdown') {
+    duBody.appendChild(duEl('p', '', 'Duel vs ' + (duel.oppName || '?')));
+    duBody.appendChild(duEl('div', 'big', String(Math.max(1, duel.count))));
+    duBody.appendChild(duEl('p', '', 'Get ready – one run, highest score wins!'));
+  } else if (ph === 'waitres') {
+    duBody.appendChild(duEl('p', '', 'Your score'));
+    duBody.appendChild(duEl('div', 'res', String(duel.myScore)));
+    duBody.appendChild(duEl('p', '', 'Waiting for your opponent to finish their run…'));
+    if (Date.now() - duel.since > DUEL_FORFEIT_MS) {
+      const f = duEl('button', 'alt', 'OPPONENT LEFT? CLAIM WIN'); f.addEventListener('click', duForfeit); duBody.appendChild(f);
+    }
+  } else if (ph === 'result') {
+    const t = duel.outcome === 'win' ? 'YOU WIN!' : duel.outcome === 'lose' ? 'YOU LOSE' : 'TIE';
+    const r = duEl('div', 'res', t); r.style.color = duel.outcome === 'win' ? '#7dff9e' : duel.outcome === 'lose' ? '#ff8a8a' : '#ffd98a'; duBody.appendChild(r);
+    const vs = duEl('div', 'vs');
+    const m = duEl('div', '', 'You'); m.appendChild(duEl('b', '', duel.myScore < 0 ? 'forfeit' : String(duel.myScore)));
+    const o = duEl('div', '', duel.oppName || 'Opponent'); o.appendChild(duEl('b', '', duel.oppScore < 0 ? 'left' : String(duel.oppScore)));
+    vs.appendChild(m); vs.appendChild(o); duBody.appendChild(vs);
+    duBody.appendChild(duEl('p', '', duel.outcome === 'tie' ? 'Tie – your ' + DUEL_FEE + ' coins are returned.' : 'You received ' + duel.pay + ' coins.'));
+    const c = duEl('button', '', 'CLOSE'); c.addEventListener('click', closeDuel); duBody.appendChild(c);
+  }
+}
+function updateDuelUI() { duelEl.style.display = duelOpen ? 'block' : 'none'; updateBjBtn(); }
+function openDuel() {
+  if (state === 'play' || state === 'caught' || bjOpen || shopOpen || !playerName) return;
+  duelOpen = true; duMsg(''); updateDuelUI(); duRender();
+  if (duel && (duel.phase === 'waiting' || duel.phase === 'waitres')) duPoll();
+}
+function closeDuel() {
+  if (duel && duel.phase !== 'result') return;
+  duStopTimer(); duel = null; duSave(); duelOpen = false; rng = Math.random; updateDuelUI();
+}
+async function joinDuel() {
+  if (duelBusy) return;
+  if (!LEADERBOARD_URL) { duMsg('Duels need the online server.'); return; }
+  const code = (document.getElementById('duelInput').value || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+  if (code.length < 3) { duMsg('Enter a code with 3-12 letters or numbers.'); return; }
+  if (wallet < DUEL_FEE) { duMsg('You need ' + DUEL_FEE + ' coins to duel (you have ' + wallet + ').'); return; }
+  duelBusy = true; duMsg('Connecting…', true);
+  try {
+    const room = await duGet(code);
+    if (room && ((room.a && room.a.u === userKey) || (room.b && room.b.u === userKey))) { duMsg('You already used this code. Pick a new one.'); return; }
+    if (room && room.res && room.res.a !== undefined && room.res.b !== undefined) { duMsg('That code was already used. Pick a new one.'); return; }
+    if (room && room.a && room.b) { duMsg('That room is full. Pick another code.'); return; }
+    const me = { u: userKey, n: playerName, t: Date.now() };
+    let slot = null;
+    for (const s of (room && room.a ? ['b'] : ['a', 'b'])) { if (await duPut(code, s, me)) { slot = s; break; } }   // the database only lets ONE player take each slot
+    if (!slot) { duMsg('That room just filled up. Pick another code.'); return; }
+    wallet -= DUEL_FEE; saveWallet();
+    duel = { code, slot, phase: 'waiting', myScore: null, seed: 0, oppName: '', since: 0 };
+    duSave(); duMsg(''); duRender(); duPoll();
+  } catch (e) { duMsg('Could not reach the server. Try again.'); }
+  finally { duelBusy = false; }
+}
+async function duCancel() {
+  if (!duel || duel.phase !== 'waiting' || duel.slot !== 'a' || duelBusy) return;
+  duelBusy = true;
+  try {
+    const r = await fetch(duUrl(duel.code, 'a'), { method: 'DELETE' });
+    if (r.ok) { duStopTimer(); wallet += DUEL_FEE; saveWallet(); duel = null; duSave(); duRender(); duMsg('Cancelled – your coins were refunded.', true); }
+    else duMsg('Someone just joined – the duel is starting!');
+  } catch (e) { duMsg('Could not reach the server.'); }
+  duelBusy = false;
+}
+function duPoll() { duStopTimer(); duelTimer = setInterval(duTick, 1200); duTick(); }
+async function duTick() {
+  if (!duel) return;
+  const myDuel = duel;
+  try {
+    if (duel.phase === 'waiting') {
+      const room = await duGet(duel.code);
+      if (duel !== myDuel || duel.phase !== 'waiting') return;
+      if (room && room.a && room.b) {
+        const opp = room[duOther()] || {};
+        duel.oppName = String(opp.n || '?').slice(0, 12);
+        let h = 0; for (const ch of duel.code) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+        duel.seed = h ^ (Math.floor(room.a.t || 1) % 2147483647);
+        duStartCountdown();
+      }
+    } else if (duel.phase === 'waitres') {
+      const res = await duGet(duel.code, 'res');
+      if (duel !== myDuel || duel.phase !== 'waitres') return;
+      if (res && res.a !== undefined && res.b !== undefined) { duSettle(res); return; }
+      if (!res || res[duel.slot] === undefined) duPut(duel.code, 'res/' + duel.slot, duel.myScore).catch(() => {});   // my score didn't arrive yet: send again
+      if (duelOpen && Date.now() - duel.since > DUEL_FORFEIT_MS && !duBody.querySelector('button')) duRender();
+    }
+  } catch (e) { /* network hiccup: next tick tries again */ }
+}
+function duStartCountdown() {
+  duStopTimer(); duel.phase = 'countdown'; duel.count = 3; duSave(); duMsg(''); duRender(); initAudio(); sfx.lane();
+  duelTimer = setInterval(() => {
+    if (!duel) { duStopTimer(); return; }
+    duel.count--;
+    if (duel.count <= 0) { duStopTimer(); beginDuelRun(); } else { duRender(); initAudio(); sfx.lane(); }
+  }, 1000);
+}
+function beginDuelRun() {
+  duel.phase = 'playing'; duSave();
+  duelOpen = false; updateDuelUI();
+  rng = mulberry32(duel.seed);
+  initAudio(); sfx.start();
+  reset(); state = 'play'; overlay.style.display = 'none'; updateBjBtn();
+}
+async function duFinishRun(s) {
+  duel.myScore = s; duel.phase = 'waitres'; duel.since = Date.now(); duSave();
+  duelOpen = true; duMsg(''); updateDuelUI(); duRender();
+  try { await duPut(duel.code, 'res/' + duel.slot, s); } catch (e) {}
+  if (duel && duel.phase === 'waitres') duPoll();
+}
+async function duForfeit() {
+  if (!duel || duel.phase !== 'waitres') return;
+  try { await duPut(duel.code, 'res/' + duOther(), -1); duTick(); } catch (e) { duMsg('Could not reach the server.'); }
+}
+function duSettle(res) {
+  if (!duel || duel.phase === 'result') return;
+  duStopTimer();
+  const me = res[duel.slot], opp = res[duOther()];
+  duel.myScore = me; duel.oppScore = opp;
+  duel.outcome = me > opp ? 'win' : me < opp ? 'lose' : 'tie';
+  duel.pay = duel.outcome === 'win' ? DUEL_WIN : duel.outcome === 'lose' ? DUEL_LOSE : DUEL_FEE;
+  duel.phase = 'result';
+  wallet += duel.pay; saveWallet();
+  try { localStorage.removeItem(DUEL_KEY); } catch (e) {}   // paid out: never pay twice
+  rng = Math.random; initAudio(); (duel.outcome === 'lose' ? sfx.busted : sfx.win)();
+  // names: take the opponent's from the room (fetched once more, best effort)
+  duRender();
+}
+// came back to the page (or logged in again) while a duel was still open: carry on where we were
+function duResume() {
+  if (duel || !userKey || state === 'play' || state === 'caught' || bjOpen || shopOpen) return;
+  let sv = null; try { sv = JSON.parse(localStorage.getItem(DUEL_KEY) || 'null'); } catch (e) {}
+  if (!sv || sv.k !== userKey || !sv.code || (sv.slot !== 'a' && sv.slot !== 'b')) return;
+  duel = { code: sv.code, slot: sv.slot, phase: sv.phase, myScore: sv.score, seed: 0, oppName: '', since: Date.now() };
+  duelOpen = true; updateDuelUI();
+  if (duel.phase === 'playing') { duFinishRun(0); return; }   // left in the middle of a run = score 0
+  if (duel.phase !== 'waitres') duel.phase = 'waiting';
+  duRender(); duPoll();
+}
+duelBtn.addEventListener('click', openDuel);
+document.getElementById('duelClose').addEventListener('click', closeDuel);
+
 // ---------- controls ----------
 function act(a) {
   if (state !== 'play') return;
@@ -840,17 +1063,19 @@ function act(a) {
 }
 function startGame() {
   if (state === 'play' || state === 'caught') return;
-  if (!playerName || bjOpen || shopOpen) return;
+  if (!playerName || bjOpen || shopOpen || duelOpen) return;
   if (state === 'over' && performance.now() - overAt < 600) return;
   initAudio(); sfx.start();
+  rng = Math.random;
   reset(); state = 'play'; overlay.style.display = 'none'; updateBjBtn();
 }
 window.addEventListener('keydown', e => {
   // typing the name: don't treat keys as game controls
-  if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') { if (e.target.id === 'copInput') applyCopName(e.target.value); else if (e.target.id === 'nickInput') applyNick(e.target.value); else submitAuth(); } return; }
+  if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') { if (e.target.id === 'copInput') applyCopName(e.target.value); else if (e.target.id === 'nickInput') applyNick(e.target.value); else if (e.target.id === 'duelInput') joinDuel(); else submitAuth(); } return; }
   const k = e.key;
   if (bjOpen) { bjKey(e); return; }
   if (shopOpen) { if (k === 'Escape') closeShop(); return; }
+  if (duelOpen) { if (k === 'Escape') closeDuel(); return; }
   if (k === 'm' || k === 'M') { initAudio(); toggleMute(); return; }
   initAudio();
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(k)) e.preventDefault();
@@ -877,11 +1102,11 @@ cv.addEventListener('touchend', e => {
 
 // ---------- spawning ----------
 function spawnRow() {
-  const n = Math.random() < Math.min(0.15 + time * 0.01, 0.55) ? 2 : 1;
-  const lanes = [-1, 0, 1].sort(() => Math.random() - 0.5);
+  const n = rng() < Math.min(0.15 + time * 0.01, 0.55) ? 2 : 1;
+  const lanes = [-1, 0, 1].sort(() => rng() - 0.5);
   const types = ['low', 'low', 'high', 'high', 'block'];
   // after ~10s some rows contain an oncoming truck (more often the longer you survive)
-  const truck = time > 10 && Math.random() < Math.min(0.1 + (time - 10) * 0.006, 0.35);
+  const truck = time > 10 && rng() < Math.min(0.1 + (time - 10) * 0.006, 0.35);
   let truckLane = null;
   if (truck) {
     const idx = Math.max(0, lanes.findIndex(l => l !== lastCoinLane));
@@ -890,7 +1115,7 @@ function spawnRow() {
   let blockUsed = false;
   for (let i = 0; i < n; i++) {
     if (truck && i === 0) { obstacles.push({ lane: truckLane, type: 'truck', z: ONC_Z, prev: ONC_Z, k: ONC_K, horned: false }); continue; }
-    let t = types[(Math.random() * types.length) | 0];
+    let t = types[(rng() * types.length) | 0];
     if (t === 'block' && blockUsed) t = 'low';
     if (t === 'block') blockUsed = true;
     obstacles.push({ lane: lanes[i], type: t, z: 85, prev: 85 });
@@ -900,7 +1125,7 @@ function spawnRow() {
 // A line of coins placed halfway between this obstacle row and the next one
 function spawnCoins(gap, avoidLane) {
   const choices = [-1, 0, 1].filter(l => l !== avoidLane);
-  const lane = choices[(Math.random() * choices.length) | 0];
+  const lane = choices[(rng() * choices.length) | 0];
   lastCoinLane = lane;
   const center = 85 + gap * 0.5;
   for (let i = -2; i <= 2; i++) coins.push({ lane, z: center + i * 2, prev: center + i * 2, got: false });
@@ -947,6 +1172,7 @@ function gameOver() {
   submitScore(s).then(() => renderBoard(s));
   overlay.style.display = 'flex';
   updateBjBtn();
+  if (duel && duel.phase === 'playing') duFinishRun(s);
 }
 function burstFx(m) {
   const cols = ['#ff4d6d', '#ffd23f', '#4dd0ff', '#7cff6b', '#c77dff', '#ff9f1c', '#ffffff'];
@@ -988,9 +1214,9 @@ function update(dt) {
     if (spawnDist <= 0) {
       const truckLane = spawnRow();
       // rows get closer together the longer you survive
-      const gap = speed * (Math.max(0.75, 0.95 - time * 0.004) + Math.random() * 0.7) + 5;
+      const gap = speed * (Math.max(0.75, 0.95 - time * 0.004) + rng() * 0.7) + 5;
       spawnDist = gap;
-      if (Math.random() < 0.8) spawnCoins(gap, truckLane);
+      if (rng() < 0.8) spawnCoins(gap, truckLane);
     }
 
     for (const o of obstacles) {
