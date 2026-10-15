@@ -201,6 +201,7 @@ function resize() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   U = Math.min(W / 4.4, H * CAM_U);
   HY = H * CAM_HY; GY = H * CAM_GY; CX = W / 2;
+  calcCrest();
 }
 const sc = z => 1 / (1 + Math.max(z, -6) / D);   // clamped: objects behind the camera can never get a negative size
 // ----- "round world" bend: the farther away something is, the more it sinks below the horizon
@@ -212,6 +213,14 @@ const zOfS = s => D * (1 / s - 1);
 const bendK = s => { const z = zOfS(s); if (z <= 0) return 0; const q = z / ZMAX; return q * q; };
 const sy = s => HY + (GY - HY) * s + H * BEND_Y * bendK(s);
 const sx = (wx, s) => CX + wx * U * s + W * BEND_X * bendSway * bendK(s);
+// The top of the "hill": past this distance the road is hidden behind the curve, so nothing farther is drawn
+// (otherwise the far road would fold back down over the near road).
+let ZV = ZMAX, CREST_Y = 0;
+function calcCrest() {
+  let best = Infinity, bz = ZMAX;
+  for (let z = 0; z <= ZMAX; z += 0.5) { const y = sy(sc(z)); if (y < best) { best = y; bz = z; } }
+  ZV = bz; CREST_Y = best;
+}
 
 function makeSkyline() {
   skyline = [];
@@ -1031,6 +1040,8 @@ function stripedRect(x, y, w, h, r, n) {
   ctx.restore();
 }
 function roadQuad(x0, x1, za, zb, color) {
+  if (zb > ZV) zb = ZV;
+  if (za >= zb) return;
   ctx.fillStyle = color;
   // long strips are cut into short pieces so they follow the curve of the world
   const n = Math.max(1, Math.ceil((zb - za) / 3));
@@ -1043,7 +1054,7 @@ function roadQuad(x0, x1, za, zb, color) {
     ctx.closePath(); ctx.fill();
   }
 }
-const fog = z => z > 55 ? Math.max(0, (ZMAX - z) / 35) : 1;
+const fog = z => { const f0 = ZV - 22; return z > f0 ? Math.max(0, (ZV - z) / 22) : 1; };
 
 const THEMES = {
   default: { name: 'Sunset City', desc: 'The classic purple sunset.', price: 0, style: 'city', hz: 'city', clouds: false,
@@ -1079,7 +1090,7 @@ function drawWaves() {
   const wt = dist * 0.4 + performance.now() / 1000 * 1.5;
   ctx.fillStyle = 'rgba(255,255,255,.3)';
   for (let j = 0; j < 16; j++) {
-    const z = 3 + ((j * 6 + wt) % 86), s = sc(z), y = sy(s);
+    const z = 3 + ((j * 6 + wt) % 86); if (z >= ZV) continue; const s = sc(z), y = sy(s);
     ctx.globalAlpha = fog(z) * 0.9;
     for (let q = 0; q < 6; q++) {
       const x = (((j * 53 + q * 89) % 100) / 100) * W, w = (0.5 + ((j * 7 + q) % 5) * 0.15) * U * s * 1.4;
@@ -1091,28 +1102,29 @@ function drawWaves() {
 
 function drawBackground() {
   const T = THEMES[curBg] || THEMES.default;
-  const g = ctx.createLinearGradient(0, 0, 0, HY);
+  const HZ = ZV < ZMAX ? CREST_Y : HY;   // where the (curved) world ends and the sky begins
+  const g = ctx.createLinearGradient(0, 0, 0, HZ);
   g.addColorStop(0, T.sky[0]); g.addColorStop(0.6, T.sky[1]); g.addColorStop(1, T.sky[2]);
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, HY + 1);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, HZ + 1);
   // sun
-  const sg = ctx.createRadialGradient(CX, HY - H * 0.03, 5, CX, HY - H * 0.03, H * 0.13);
+  const sg = ctx.createRadialGradient(CX, HZ - H * 0.03, 5, CX, HZ - H * 0.03, H * 0.13);
   sg.addColorStop(0, T.sun[0]); sg.addColorStop(0.4, T.sun[1]); sg.addColorStop(1, T.sun[2]);
-  ctx.fillStyle = sg; ctx.fillRect(0, 0, W, HY);
+  ctx.fillStyle = sg; ctx.fillRect(0, 0, W, HZ);
   if (T.clouds) drawClouds();
   // far horizon
   ctx.fillStyle = T.skyline;
   const hk = HY / 0.22;
   if (T.hz === 'hills') {
-    for (const s of skyline) { ctx.beginPath(); ctx.ellipse((s.x + s.w / 2) * W, HY + 1, s.w * W * 1.1, s.h * hk * 0.8, 0, Math.PI, 0); ctx.fill(); }
+    for (const s of skyline) { ctx.beginPath(); ctx.ellipse((s.x + s.w / 2) * W, HZ + 1, s.w * W * 1.1, s.h * hk * 0.8, 0, Math.PI, 0); ctx.fill(); }
   } else {
-    for (const s of skyline) ctx.fillRect(s.x * W, HY - s.h * hk, s.w * W + 1, s.h * hk);
+    for (const s of skyline) ctx.fillRect(s.x * W, HZ - s.h * hk, s.w * W + 1, s.h * hk);
   }
   // ground (or water)
   if (T.water) {
-    const wg = ctx.createLinearGradient(0, HY, 0, H);
+    const wg = ctx.createLinearGradient(0, HZ, 0, H);
     wg.addColorStop(0, '#6cc6f0'); wg.addColorStop(1, T.ground); ctx.fillStyle = wg;
   } else ctx.fillStyle = T.ground;
-  ctx.fillRect(0, HY, W, H - HY);
+  ctx.fillRect(0, HZ, W, H - HZ);
   if (T.water) drawWaves();
   // sidewalks, curbs, road
   roadQuad(-T.sideW, -1.7, -4, ZMAX, T.side);
@@ -1133,10 +1145,10 @@ function drawBackground() {
     if (zb > za) for (const lx of [-0.5, 0.5]) roadQuad(lx - 0.03, lx + 0.03, za, Math.min(zb, ZMAX), '#e8e8f0');
   }
   // horizon haze
-  const hzH = (GY - HY) * 0.3 + H * BEND_Y;
-  const hz = ctx.createLinearGradient(0, HY, 0, HY + hzH);
+  const hzH = (GY - HY) * 0.3;
+  const hz = ctx.createLinearGradient(0, HZ, 0, HZ + hzH);
   hz.addColorStop(0, T.haze); hz.addColorStop(1, fadeOut(T.haze));
-  ctx.fillStyle = hz; ctx.fillRect(0, HY, W, hzH);
+  ctx.fillStyle = hz; ctx.fillRect(0, HZ, W, hzH);
 }
 
 function drawPalm(b) {
@@ -1398,7 +1410,7 @@ function drawWarnings() {
   for (const o of obstacles) {
     if (!o.k || o.z < 26) continue;
     // sits on the road far ahead, near the horizon, in the lane the truck will arrive in
-    const ws = sc(65), x = sx(o.lane, ws), r = Math.max(10, H * 0.03), y = sy(ws) - r * 0.85;
+    const ws = sc(Math.min(65, ZV - 6)), x = sx(o.lane, ws), r = Math.max(10, H * 0.03), y = sy(ws) - r * 0.85;
     ctx.fillStyle = 'rgba(255,59,48,.35)'; ctx.beginPath(); ctx.ellipse(x, sy(ws), r * 1.4, r * 0.3, 0, 0, 7); ctx.fill();
     ctx.save(); ctx.globalAlpha = flash ? 1 : 0.5; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r * 1.1, y + r * 0.85); ctx.lineTo(x - r * 1.1, y + r * 0.85); ctx.closePath();
@@ -1457,9 +1469,9 @@ function render() {
   bendSway = Math.sin(dist * 0.008) * 0.75 + Math.sin(performance.now() / 4000) * 0.25;
   drawBackground();
   const list = [];
-  for (const b of B) list.push({ z: b.z, f: () => drawBuilding(b) });
-  for (const o of obstacles) if (o.z < ZMAX + 2 && o.z > -5) list.push({ z: o.z, f: () => drawObstacle(o) });
-  for (const co of coins) if (co.z > -5) list.push({ z: co.z, f: () => drawCoin(co) });
+  for (const b of B) if (b.z < ZV) list.push({ z: b.z, f: () => drawBuilding(b) });
+  for (const o of obstacles) if (o.z < ZV && o.z > -5) list.push({ z: o.z, f: () => drawObstacle(o) });
+  for (const co of coins) if (co.z > -5 && co.z < ZV) list.push({ z: co.z, f: () => drawCoin(co) });
   list.push({ z: PZ, f: drawPlayer });
   // while chasing, the cop is drawn behind the runner so he never covers him
   list.push({ z: (state === 'caught' || state === 'over') ? C.z : PZ + 0.5, f: drawCop });
