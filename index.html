@@ -69,8 +69,23 @@
   .shcard input{display:block;box-sizing:border-box;width:100%;font-size:16px;padding:8px 10px;margin-top:6px;border-radius:8px;border:2px solid #4a3a7a;background:#1b1036;color:#fff;text-align:center;outline:none;}
   .shcard input:focus{border-color:#ff7a00;}
   .copplate{background:#1f4aa8;color:#ffd60a;font-weight:800;border-radius:6px;padding:6px 14px;font-size:16px;letter-spacing:1px;max-width:90%;overflow:hidden;text-overflow:ellipsis;}
-  #duelBtn{position:fixed;left:0;top:calc(50% + 62px);z-index:6;margin:0;padding:14px 12px;font-size:18px;border-radius:0 12px 12px 0;background:#c0392b;border:2px solid #ff8f84;border-left:0;box-shadow:2px 2px 12px rgba(0,0,0,.5);}
+  #duelBtn{position:fixed;right:0;top:calc(50% + 62px);z-index:6;margin:0;padding:14px 12px;font-size:18px;border-radius:12px 0 0 12px;background:#c0392b;border:2px solid #ff8f84;border-right:0;box-shadow:-2px 2px 12px rgba(0,0,0,.5);}
   #duelBtn:hover{background:#e04a3a;}
+  #hrBtn{position:fixed;left:0;top:calc(50% + 62px);z-index:6;margin:0;padding:14px 12px;font-size:18px;border-radius:0 12px 12px 0;background:#8a5a1f;border:2px solid #e0b060;border-left:0;box-shadow:2px 2px 12px rgba(0,0,0,.5);}
+  #hrBtn:hover{background:#a8721f;}
+  #hr{position:fixed;inset:0;z-index:7;display:none;color:#fff;text-align:center;background:radial-gradient(ellipse at center,#3b6b2a 0%,#24421a 75%,#142610 100%);overflow:auto;}
+  #hr .shtop h2{color:#ffd98a;}
+  #hr #hrClose{background:#3b2a66;margin:0;padding:8px 14px;font-size:16px;}
+  #hrCanvas{display:block;width:100%;max-width:640px;margin:8px auto;border-radius:12px;border:3px solid #5a3b1c;background:#c9a66b;}
+  #hrMsg{min-height:30px;font-size:20px;font-weight:700;color:#ffd98a;margin:8px 0;}
+  #hrPicks{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin:6px 0 10px;}
+  #hr button.hrpick{margin:0;padding:10px 0;font-size:20px;border:3px solid transparent;border-radius:10px;color:#111;text-shadow:0 1px 0 rgba(255,255,255,.35);}
+  #hr button.hrpick small{display:block;margin:0;font-size:11px;font-weight:700;color:#111;}
+  #hr button.hrpick.sel{border-color:#fff;box-shadow:0 0 12px #fff;}
+  #hr .hrchip{margin:4px;width:52px;height:52px;border-radius:50%;padding:0;background:#c0392b;border:4px dashed #fff;font-size:16px;}
+  #hr #hrClear,#hr #hrMax{background:#3b2a66;margin:4px;font-size:16px;padding:10px 18px;}
+  #hr #hrGo{background:#e67e22;}
+  #hr button:disabled{opacity:.5;}
   #duel{position:fixed;inset:0;z-index:8;display:none;color:#fff;text-align:center;background:radial-gradient(ellipse at center,#5a1230 0%,#2a0a1c 75%,#14040d 100%);overflow:auto;}
   #duel .shtop h2{color:#ffd98a;}
   #duel #duelClose{background:#3b2a66;margin:0;padding:8px 14px;font-size:16px;}
@@ -151,6 +166,22 @@
 <button id="bjBtn" style="display:none" title="Play blackjack with your coins">&#127183; 21</button>
 <button id="shopBtn" style="display:none" title="Spend your coins in the shop">&#128722; SHOP</button>
 <button id="duelBtn" style="display:none" title="Play a 1v1 online duel for coins">&#9876; DUEL</button>
+<button id="hrBtn" style="display:none" title="Bet your coins on a horse race">&#127943; HORSES</button>
+<div id="hr">
+  <div class="shwrap">
+    <div class="shtop"><h2>HORSE RACING</h2><button id="hrClose">&larr; Back</button></div>
+    <div class="bjwallet">Wallet: <span class="coin"></span> <b id="hrWallet">0</b> &nbsp;&middot;&nbsp; Bet: <b id="hrBetEl">0</b></div>
+    <canvas id="hrCanvas" width="640" height="320"></canvas>
+    <div id="hrMsg">Pick a horse and place your bet</div>
+    <div id="hrPicks"></div>
+    <div>
+      <button class="hrchip" id="hrC1">1</button><button class="hrchip" id="hrC5">5</button><button class="hrchip" id="hrC10">10</button><button class="hrchip" id="hrC25">25</button>
+      <button id="hrClear">Clear</button><button id="hrMax">Max</button>
+    </div>
+    <button id="hrGo">START RACE</button>
+    <small>6 horses &middot; race lasts about 5 seconds<br>Pick the winner and get 3&times; your bet back. Pick wrong and the bet is gone. Play money only.</small>
+  </div>
+</div>
 <div id="duel">
   <div class="shwrap">
     <div class="shtop"><h2>ONLINE DUEL</h2><button id="duelClose">&larr; Back</button></div>
@@ -165,8 +196,10 @@
     <div class="bjwallet">Wallet: <span class="coin"></span> <b id="shWallet">0</b></div>
     <h3>BACKGROUNDS</h3>
     <div id="shBg" class="shgrid"></div>
-    <h3>CHARACTER</h3>
+    <h3>CHARACTERS</h3>
     <div id="shChar" class="shgrid"></div>
+    <h3>NAMES</h3>
+    <div id="shName" class="shgrid"></div>
     <h3>REAL LIFE</h3>
     <div id="shReal" class="shgrid"></div>
     <small id="shMsg"></small>
@@ -634,8 +667,9 @@ function bjDouble() {
   if (v > 21) bjFinish('lose', 'Bust (' + v + ').'); else bjStand();
 }
 function updateBjBtn() {
-  const show = !bjOpen && !shopOpen && !duelOpen && playerName && (state === 'menu' || state === 'over');
+  const show = !bjOpen && !shopOpen && !duelOpen && !hrOpen && playerName && (state === 'menu' || state === 'over');
   bjBtn.style.display = show ? 'block' : 'none';
+  document.getElementById('hrBtn').style.display = show ? 'block' : 'none';
   shopBtn.style.display = show ? 'block' : 'none';
   duelBtn.style.display = show ? 'block' : 'none';
 }
@@ -686,8 +720,8 @@ function shCard(pv, name, desc, on) {
 }
 function shRender() {
   document.getElementById('shWallet').textContent = wallet;
-  const bgEl = document.getElementById('shBg'), chEl = document.getElementById('shChar');
-  bgEl.textContent = ''; chEl.textContent = '';
+  const bgEl = document.getElementById('shBg'), chEl = document.getElementById('shChar'), nmEl = document.getElementById('shName');
+  bgEl.textContent = ''; chEl.textContent = ''; nmEl.textContent = '';
   for (const id of Object.keys(THEMES)) {
     const T = THEMES[id], has = id === 'default' || !!owned[id], on = curBg === id;
     const pv = document.createElement('div'); pv.className = 'prev';
@@ -710,10 +744,10 @@ function shRender() {
     const b = document.createElement('button');
     if (!owned.tag) { b.innerHTML = 'BUY ' + priceHTML(TAG_PRICE); if (wallet < TAG_PRICE) b.className = 'alt'; b.addEventListener('click', () => buyItem('tag')); }
     else { b.textContent = tagOn ? 'TAKE OFF' : 'WEAR'; b.addEventListener('click', toggleTag); }
-    card.appendChild(b); chEl.appendChild(card);
+    card.appendChild(b); nmEl.appendChild(card);
   }
-  shNickCard(chEl);
-  shCopCard(chEl);
+  shNickCard(nmEl);
+  shCopCard(nmEl);
   shRealCards(document.getElementById('shReal'));
 }
 
@@ -1114,6 +1148,129 @@ function duResume() {
 duelBtn.addEventListener('click', openDuel);
 document.getElementById('duelClose').addEventListener('click', closeDuel);
 
+// ---------- horse racing ----------
+const HORSES = [
+  { n: 1, name: 'Red', c: '#e53935' },
+  { n: 2, name: 'Green', c: '#43a047' },
+  { n: 3, name: 'Blue', c: '#1e88e5' },
+  { n: 4, name: 'Purple', c: '#8e24aa' },
+  { n: 5, name: 'Pink', c: '#ff6fb5' },
+  { n: 6, name: 'Yellow', c: '#fdd835' }
+];
+const HR_WIN_MULT = 3, HR_TIME = 5;   // winner gets bet x3 back; race takes ~5s
+const hrEl = document.getElementById('hr'), hrBtn = document.getElementById('hrBtn'), hrCv = document.getElementById('hrCanvas');
+const hctx = hrCv.getContext('2d'), hrMsgEl = document.getElementById('hrMsg'), hrPicksEl = document.getElementById('hrPicks');
+let hrOpen = false, hrRun = false, hrBet = 0, hrLastBet = 0, hrPick = 0, hrRaf = 0;
+function hrSay(t, good) { hrMsgEl.textContent = t; hrMsgEl.style.color = good === undefined ? '#ffd98a' : good ? '#7dff9e' : '#ff8a8a'; }
+function hrHorse(x, y, col, num, ph) {
+  const g = hctx; g.save(); g.translate(x, y); g.lineCap = 'round';
+  g.strokeStyle = '#3a2a1a'; g.lineWidth = 3;
+  for (let i = 0; i < 4; i++) {
+    const lx = (i < 2 ? -12 : 12) + (i % 2 ? 4 : -4), sw = Math.sin(ph + (i % 2) * Math.PI) * 7;
+    g.beginPath(); g.moveTo(lx, 6); g.lineTo(lx + sw, 18); g.stroke();
+  }
+  g.strokeStyle = col; g.lineWidth = 4;
+  g.beginPath(); g.moveTo(-19, -3); g.quadraticCurveTo(-28, 2 + Math.sin(ph) * 3, -27, 10); g.stroke();
+  g.fillStyle = col; g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 1.2;
+  g.beginPath(); g.ellipse(0, 0, 20, 9, 0, 0, 7); g.fill(); g.stroke();
+  g.beginPath(); g.moveTo(14, -4); g.lineTo(24, -16); g.lineTo(33, -12); g.lineTo(28, -3); g.lineTo(18, 4); g.closePath(); g.fill(); g.stroke();
+  g.fillStyle = '#111'; g.beginPath(); g.arc(28, -11, 1.6, 0, 7); g.fill();
+  g.fillStyle = '#fff'; g.fillRect(-8, -9, 13, 13);
+  g.fillStyle = '#111'; g.font = '900 11px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(String(num), -1.5, -2);
+  g.restore();
+}
+function hrDraw(p, t, win) {
+  const g = hctx, Wd = hrCv.width, Hd = hrCv.height, top = 20, lh = 46, sX = 60, fX = 580;
+  g.fillStyle = '#3f8f35'; g.fillRect(0, 0, Wd, Hd);
+  for (let i = 0; i < 6; i++) {
+    g.fillStyle = i % 2 ? '#bf9a5e' : '#c9a66b'; g.fillRect(0, top + i * lh, Wd, lh);
+  }
+  g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(sX - 30, top, 3, 6 * lh);
+  const cs = 8;
+  for (let r = 0; r < 6 * lh / cs; r++) for (let c = 0; c < 2; c++) {
+    g.fillStyle = (r + c) % 2 ? '#fff' : '#111'; g.fillRect(fX + c * cs, top + r * cs, cs, cs);
+  }
+  for (let i = 0; i < 6; i++) {
+    g.fillStyle = HORSES[i].c; g.beginPath(); g.arc(18, top + i * lh + lh / 2, 11, 0, 7); g.fill();
+    g.fillStyle = i === 5 || i === 4 ? '#111' : '#fff'; g.font = '900 13px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(String(i + 1), 18, top + i * lh + lh / 2 + 1);
+  }
+  for (let i = 0; i < 6; i++) {
+    const x = sX + p[i] * (fX - sX - 30), y = top + i * lh + lh / 2;
+    hrHorse(x, y, HORSES[i].c, i + 1, t * 18 + i * 1.3 + (p[i] >= 1 ? 99 : 0));
+    if (win === i) { g.fillStyle = '#ffd23f'; g.font = '900 16px system-ui,sans-serif'; g.textAlign = 'center'; g.fillText('\u2605', x + 6, y - 24); }
+  }
+}
+function hrRender() {
+  document.getElementById('hrWallet').textContent = wallet;
+  document.getElementById('hrBetEl').textContent = hrBet;
+  hrPicksEl.textContent = '';
+  for (const h of HORSES) {
+    const b = document.createElement('button'); b.className = 'hrpick' + (hrPick === h.n ? ' sel' : '');
+    b.style.background = h.c; b.disabled = hrRun;
+    b.innerHTML = h.n + '<small>' + h.name + '</small>';
+    b.addEventListener('click', () => { if (hrRun) return; hrPick = h.n; hrRender(); });
+    hrPicksEl.appendChild(b);
+  }
+  const lock = hrRun;
+  for (const id of ['hrC1', 'hrC5', 'hrC10', 'hrC25', 'hrClear', 'hrMax', 'hrGo', 'hrClose']) document.getElementById(id).disabled = lock;
+  if (!lock && wallet < 1 && hrBet < 1) hrSay('Out of coins! Go back, run, and collect more.', false);
+}
+function hrStatic() { hrDraw([0, 0, 0, 0, 0, 0], 0, -1); }
+function openHr() {
+  if (state === 'play' || state === 'caught' || bjOpen || shopOpen || duelOpen) return;
+  hrOpen = true; hrEl.style.display = 'block'; updateBjBtn();
+  if (hrBet < 1) hrBet = Math.min(5, wallet);
+  hrBet = Math.min(hrBet, wallet);
+  hrSay('Pick a horse and place your bet');
+  hrRender(); hrStatic();
+}
+function closeHr() { if (hrRun) return; hrOpen = false; hrEl.style.display = 'none'; updateBjBtn(); }
+function hrStart() {
+  if (hrRun) return;
+  if (!hrPick) { hrSay('Pick a horse first.', false); return; }
+  if (hrBet < 1) { hrSay('Place a bet first.', false); return; }
+  if (hrBet > wallet) { hrSay('Not enough coins.', false); return; }
+  initAudio();
+  const bet = hrBet, pick = hrPick;
+  hrLastBet = bet; wallet -= bet; saveWallet();
+  const T = HORSES.map(() => HR_TIME - 0.4 + Math.random() * 0.8);
+  const amp = HORSES.map(() => (Math.random() < 0.5 ? -1 : 1) * (0.03 + Math.random() * 0.03));
+  const kk = HORSES.map(() => 2 + ((Math.random() * 3) | 0));
+  let win = 0; T.forEach((v, i) => { if (v < T[win]) win = i; });
+  const maxT = Math.max(...T);
+  hrRun = true; hrSay('And they\'re off!'); hrRender(); sfx.start();
+  const t0 = performance.now();
+  const step = now => {
+    const t = (now - t0) / 1000;
+    const p = T.map((tt, i) => { const u = Math.min(1, t / tt); return Math.min(1, Math.max(0, u + amp[i] * Math.sin(u * Math.PI * kk[i]))); });
+    const done = t >= maxT + 0.3;
+    hrDraw(p, t, t >= T[win] ? win : -1);
+    if (!done) { hrRaf = requestAnimationFrame(step); return; }
+    hrRun = false;
+    const H0 = HORSES[win];
+    if (pick === H0.n) {
+      const pay = bet * HR_WIN_MULT; wallet += pay; sfx.win();
+      hrSay('Horse ' + H0.n + ' (' + H0.name + ') wins! You got ' + pay + ' coins!', true);
+    } else {
+      sfx.lose();
+      hrSay('Horse ' + H0.n + ' (' + H0.name + ') wins. You lost ' + bet + '.', false);
+    }
+    hrBet = Math.min(hrLastBet, wallet);
+    saveWallet(); hrRender();
+  };
+  hrRaf = requestAnimationFrame(step);
+}
+for (const v of [1, 5, 10, 25]) {
+  document.getElementById('hrC' + v).addEventListener('click', () => { if (hrRun) return; hrBet = Math.min(wallet, hrBet + v); hrRender(); });
+}
+document.getElementById('hrClear').addEventListener('click', () => { if (hrRun) return; hrBet = 0; hrRender(); });
+document.getElementById('hrMax').addEventListener('click', () => { if (hrRun) return; hrBet = wallet; hrRender(); });
+document.getElementById('hrGo').addEventListener('click', hrStart);
+document.getElementById('hrClose').addEventListener('click', closeHr);
+hrBtn.addEventListener('click', openHr);
+
 // ---------- controls ----------
 function act(a) {
   if (state !== 'play') return;
@@ -1124,7 +1281,7 @@ function act(a) {
 }
 function startGame() {
   if (state === 'play' || state === 'caught') return;
-  if (!playerName || bjOpen || shopOpen || duelOpen) return;
+  if (!playerName || bjOpen || shopOpen || duelOpen || hrOpen) return;
   if (state === 'over' && performance.now() - overAt < 600) return;
   initAudio(); sfx.start();
   rng = Math.random;
@@ -1136,6 +1293,7 @@ window.addEventListener('keydown', e => {
   if (bjOpen) { bjKey(e); return; }
   if (shopOpen) { if (k === 'Escape') closeShop(); return; }
   if (duelOpen) { if (k === 'Escape') closeDuel(); return; }
+  if (hrOpen) { if (k === 'Escape') closeHr(); return; }
   if (k === 'm' || k === 'M') { initAudio(); toggleMute(); return; }
   initAudio();
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(k)) e.preventDefault();
