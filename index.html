@@ -396,7 +396,8 @@ const NAME_RE = /^[\p{L}\p{N}_-]{3,12}$/u;
 const userUrl = k => boardBase() + '/users/' + encodeURIComponent(k) + '.json';
 const userFieldUrl = (k, f) => boardBase() + '/users/' + encodeURIComponent(k) + '/' + f + '.json';
 async function dbGetUser(k) {
-  const r = await fetch(userUrl(k));
+  const r = await dbf(userUrl(k));
+  if (r.status === 401 || r.status === 403) return null;
   if (!r.ok) throw new Error('db');
   return await r.json();
 }
@@ -424,7 +425,7 @@ function updateAuthUI() {
   who.textContent = has ? 'Playing as ' + playerName : (sessionChecking ? 'Signing in…' : '');
   updateBjBtn();
 }
-function loginAs(key, rec, pass) {
+function loginAs(key, rec) {
   userKey = key; playerName = String((typeof rec.nick === 'string' && rec.nick.trim()) ? rec.nick : (rec.name || key)).slice(0, 12);
   wallet = Math.max(0, parseInt(rec.wallet, 10) || 0);
   best = Math.max(0, parseInt(rec.best, 10) || 0);
@@ -435,7 +436,7 @@ function loginAs(key, rec, pass) {
   tagOn = rec.tag === true && !!owned.tag;
   copName = (owned.copname && typeof rec.copName === 'string') ? rec.copName.slice(0, 8) : '';
   curChar = (rec.char === 'kingo' && owned.kingo) ? 'kingo' : (rec.char === 'ahmetcan' && owned.ahmetcan) ? 'ahmetcan' : 'default';
-  try { localStorage.setItem(SESSION_KEY, JSON.stringify({ k: key, p: pass })); } catch (e) {}
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify({ k: key, r: refreshTok })); } catch (e) {}
   showAuthChoice(); updateAuthUI(); updateWalletUI();
   titleEl.textContent = 'COP CHASE RUN'; btn.textContent = 'START';
   setTimeout(duResume, 400);
@@ -443,31 +444,102 @@ function loginAs(key, rec, pass) {
 function logout() {
   if (state === 'play' || state === 'caught') return;
   if (bjOpen) closeBj();
-  userKey = ''; playerName = ''; wallet = 0; best = 0; owned = {}; curBg = 'default'; tagOn = false; copName = ''; curChar = 'default'; dirty.clear();
+  userKey = ''; playerName = ''; wallet = 0; best = 0; owned = {}; curBg = 'default'; tagOn = false; copName = ''; curChar = 'default'; dirty.clear(); clearTokens();
   try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
   showAuthChoice(); updateAuthUI(); updateWalletUI();
+}
+// ---- Firebase Authentication (REST) ----
+const FIREBASE_API_KEY = 'AIzaSyA0g1k3x5J6v8Q9R2e4F7G1H2J3K4L5M6N';
+const EMAIL_DOMAIN = '@copchase.game';
+let idToken = '', refreshTok = '', tokenExp = 0, authUid = '';
+const jsonH = { 'Content-Type': 'application/json' };
+const fbPass = p => 'cc:' + p;
+function emailLocal(key) { let s = ''; for (const ch of key) s += /[a-z0-9]/.test(ch) ? ch : '_' + ch.codePointAt(0).toString(16) + '_'; return s; }
+function clearTokens() { idToken = ''; refreshTok = ''; tokenExp = 0; authUid = ''; }
+async function idp(ep, body) {
+  const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:' + ep + '?key=' + FIREBASE_API_KEY, { method: 'POST', headers: jsonH, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error('auth'); e.code = (j.error && j.error.message) || 'auth'; throw e; }
+  return j;
+}
+function setTokens(j) {
+  idToken = j.idToken || j.id_token; refreshTok = j.refreshToken || j.refresh_token;
+  authUid = j.localId || j.user_id || authUid;
+  tokenExp = Date.now() + (parseInt(j.expiresIn || j.expires_in, 10) || 3600) * 1000 - 60000;
+}
+async function refreshIdToken() {
+  const r = await fetch('https://securetoken.googleapis.com/v1/token?key=' + FIREBASE_API_KEY, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=refresh_token&refresh_token=' + encodeURIComponent(refreshTok) });
+  if (!r.ok) throw new Error('refresh');
+  setTokens(await r.json());
+}
+async function dbf(url, opts) {
+  if (refreshTok && Date.now() > tokenExp) await refreshIdToken();
+  if (idToken) url += (url.includes('?') ? '&' : '?') + 'auth=' + encodeURIComponent(idToken);
+  return fetch(url, opts);
+}
+async function readPublic(path) { const r = await fetch(boardBase() + path); if (!r.ok) throw new Error('db'); return r.json(); }
+function authErr(e) {
+  const c = String((e && e.code) || '');
+  if (/OPERATION_NOT_ALLOWED/.test(c)) return 'Email/password sign-in is not enabled in Firebase yet.';
+  if (/TOO_MANY_ATTEMPTS/.test(c)) return 'Too many attempts. Wait a bit and try again.';
+  if (/API_KEY|PERMISSION|CONFIGURATION/.test(c)) return 'Server setup problem (check the API key).';
+  return 'Could not reach the server. Try again.';
+}
+async function doLogin(raw, pass) {
+  const ek = emailLocal(raw), email = ek + EMAIL_DOMAIN;
+  try {
+    setTokens(await idp('signInWithPassword', { email, password: fbPass(pass), returnSecureToken: true }));
+  } catch (e) {
+    if (!/EMAIL_NOT_FOUND|INVALID_LOGIN_CREDENTIALS|INVALID_PASSWORD/.test(e.code || '')) throw e;
+    // maybe an old account (made before Firebase Auth): prove the old password and claim it
+    const hasUid = await readPublic('/users/' + encodeURIComponent(raw) + '/uid.json');
+    const nm = await readPublic('/users/' + encodeURIComponent(raw) + '/name.json');
+    if (hasUid || !nm) { setAuthMsg('Wrong username or password.'); return; }
+    let j;
+    try { j = await idp('signUp', { email, password: fbPass(pass), returnSecureToken: true }); }
+    catch (e2) { if (/EMAIL_EXISTS/.test(e2.code || '')) { setAuthMsg('Wrong username or password.'); return; } throw e2; }
+    setTokens(j);
+    const base = boardBase() + '/users/' + encodeURIComponent(raw) + '.json';
+    const r1 = await dbf(base, { method: 'PATCH', headers: jsonH, body: JSON.stringify({ uid: authUid, claimPass: pass }) });
+    if (!r1.ok) { try { await idp('delete', { idToken }); } catch (_) {} clearTokens(); setAuthMsg('Wrong username or password.'); return; }
+    await dbf(base, { method: 'PATCH', headers: jsonH, body: JSON.stringify({ claimPass: null, pass: null }) }).catch(() => {});
+  }
+  let key = ek, u = await dbGetUser(ek);
+  if (!u && raw !== ek) { key = raw; u = await dbGetUser(raw); }
+  if (!u) {
+    key = ek; u = { name: raw, uid: authUid, wallet: 0, best: 0, bg: 'default', tag: false, created: Date.now() };
+    const r = await dbf(userUrl(ek), { method: 'PUT', headers: jsonH, body: JSON.stringify(u) });
+    if (!r.ok) throw new Error('db');
+  }
+  loginAs(key, u);
 }
 async function submitAuth() {
   if (authBusy) return;
   const name = userInput.value.trim(), pass = passInput.value;
   if (!NAME_RE.test(name)) { setAuthMsg('Username: 3-12 letters, numbers, _ or -'); return; }
   if (pass.length < 4) { setAuthMsg('Password must be at least 4 characters.'); return; }
+  if (/^PASTE/.test(FIREBASE_API_KEY)) { setAuthMsg('Setup needed: add your Firebase Web API key (FIREBASE_API_KEY) in the game file.'); return; }
   authBusy = true; authSubmit.disabled = true; setAuthMsg('Please wait…', true);
   try {
-    const key = name.toLowerCase();
-    const u = await dbGetUser(key);
+    const raw = name.toLowerCase();
     if (authMode === 'register') {
-      if (u) { setAuthMsg('That username is already taken.'); return; }
-      const rec = { name, pass, wallet: 0, best: 0, bg: 'default', tag: false, created: Date.now() };
-      const r = await fetch(userUrl(key), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(rec) });
+      const ek = emailLocal(raw);
+      const t1 = await readPublic('/users/' + encodeURIComponent(raw) + '/name.json');
+      const t2 = ek !== raw ? await readPublic('/users/' + encodeURIComponent(ek) + '/name.json') : null;
+      if (t1 || t2) { setAuthMsg('That username is already taken.'); return; }
+      let j;
+      try { j = await idp('signUp', { email: ek + EMAIL_DOMAIN, password: fbPass(pass), returnSecureToken: true }); }
+      catch (e) { if (/EMAIL_EXISTS/.test(e.code || '')) { setAuthMsg('That username is already taken.'); return; } throw e; }
+      setTokens(j);
+      const rec = { name, uid: authUid, wallet: 0, best: 0, bg: 'default', tag: false, created: Date.now() };
+      const r = await dbf(userUrl(ek), { method: 'PUT', headers: jsonH, body: JSON.stringify(rec) });
       if (!r.ok) throw new Error('db');
-      loginAs(key, rec, pass);
+      loginAs(ek, rec);
     } else {
-      if (!u || typeof u !== 'object' || String(u.pass) !== pass) { setAuthMsg('Wrong username or password.'); return; }
-      loginAs(key, u, pass);
+      await doLogin(raw, pass);
     }
   } catch (e) {
-    setAuthMsg('Could not reach the server. Try again.');
+    setAuthMsg(authErr(e));
   } finally {
     authBusy = false; authSubmit.disabled = false;
   }
@@ -475,14 +547,17 @@ async function submitAuth() {
 async function restoreSession() {
   let ses = null;
   try { ses = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); } catch (e) {}
-  if (!ses || !ses.k) { updateAuthUI(); return; }
+  if (!ses || !ses.k || !ses.r) { updateAuthUI(); return; }
   sessionChecking = true; updateAuthUI();
   try {
+    refreshTok = ses.r; await refreshIdToken();
     const u = await dbGetUser(ses.k);
-    if (u && typeof u === 'object' && String(u.pass) === ses.p) loginAs(ses.k, u, ses.p);
-    else { try { localStorage.removeItem(SESSION_KEY); } catch (e) {} }
+    if (u && typeof u === 'object' && u.uid === authUid) loginAs(ses.k, u);
+    else { clearTokens(); try { localStorage.removeItem(SESSION_KEY); } catch (e) {} }
   } catch (e) {
-    setAuthMsg('Could not reach the server. Log in again when it is back.');
+    if (e && e.message === 'refresh') { try { localStorage.removeItem(SESSION_KEY); } catch (e2) {} }
+    clearTokens();
+    setAuthMsg('Could not sign you in automatically. Please log in again.');
   }
   sessionChecking = false; updateAuthUI();
 }
@@ -495,7 +570,7 @@ function syncField(f) {
   syncChain = syncChain.then(async () => {
     if (k !== userKey) return;
     try {
-      const r = await fetch(userFieldUrl(k, f), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f === 'wallet' ? wallet : f === 'best' ? best : f === 'owned' ? owned : f === 'bg' ? curBg : f === 'copName' ? copName : f === 'nick' ? playerName : f === 'char' ? curChar : tagOn) });
+      const r = await dbf(userFieldUrl(k, f), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(f === 'wallet' ? wallet : f === 'best' ? best : f === 'owned' ? owned : f === 'bg' ? curBg : f === 'copName' ? copName : f === 'nick' ? playerName : f === 'char' ? curChar : tagOn) });
       if (r.ok) dirty.delete(f);
     } catch (e) {}
   });
@@ -539,7 +614,7 @@ async function submitScore(s) {
   const qualifies = board.length < BOARD_SIZE || s > board[board.length - 1].s;
   if (qualifies) {
     try {
-      await fetch(boardBase() + '/scores.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ n: playerName, s }) });
+      await dbf(boardBase() + '/scores.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ n: playerName, s }) });
     } catch (e) {}
   }
   await loadBoard();
@@ -894,9 +969,9 @@ let duelOpen = false, duel = null, duelTimer = 0, duelBusy = false, duLiveTimer 
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 const duUrl = (code, path) => boardBase() + '/duels/' + code + (path ? '/' + path : '') + '.json';
 const duMsg = (t, good) => { duMsgEl.textContent = t || ''; duMsgEl.style.color = good ? '#7dff9e' : '#ff8a8a'; };
-async function duGet(code, path) { const r = await fetch(duUrl(code, path)); if (!r.ok) throw new Error('http ' + r.status); return r.json(); }
+async function duGet(code, path) { const r = await dbf(duUrl(code, path)); if (!r.ok) throw new Error('http ' + r.status); return r.json(); }
 async function duPut(code, path, val) {
-  const r = await fetch(duUrl(code, path), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(val) });
+  const r = await dbf(duUrl(code, path), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(val) });
   return r.ok;
 }
 function duSave() {
@@ -1006,7 +1081,7 @@ async function duCancel() {
   if (!duel || duel.phase !== 'waiting' || duel.slot !== 'a' || duelBusy) return;
   duelBusy = true;
   try {
-    const r = await fetch(duUrl(duel.code, 'a'), { method: 'DELETE' });
+    const r = await dbf(duUrl(duel.code, 'a'), { method: 'DELETE' });
     if (r.ok) { duStopTimer(); wallet += DUEL_FEE; saveWallet(); duel = null; duSave(); duRender(); duMsg('Cancelled – your coins were refunded.', true); }
     else duMsg('Someone just joined – the duel is starting!');
   } catch (e) { duMsg('Could not reach the server.'); }
@@ -1071,7 +1146,7 @@ function duStartLive() {
   duLiveTimer = setInterval(async () => {
     if (duel !== myDuel || duel.phase !== 'playing') { duStopLive(); return; }
     try {
-      const r = await fetch(url);
+      const r = await dbf(url);
       if (!r.ok) return;
       const v = await r.json();
       if (duel === myDuel && duel.phase === 'playing' && typeof v === 'number') { duel.oppTime = v; duStopLive(); }
@@ -1102,7 +1177,7 @@ function duDeletable(room) {
   return (!!d.a && !!d.b) || ((!!d.a || !!d.b) && (r.a === -1 || r.b === -1));
 }
 async function duDelete(code) {
-  try { const r = await fetch(duUrl(code), { method: 'DELETE' }); return r.ok; } catch (e) { return false; }
+  try { const r = await dbf(duUrl(code), { method: 'DELETE' }); return r.ok; } catch (e) { return false; }
 }
 async function duCleanup(code, slot) {
   for (let i = 0; i < 4; i++) {
