@@ -449,7 +449,7 @@ function logout() {
   showAuthChoice(); updateAuthUI(); updateWalletUI();
 }
 // ---- Firebase Authentication (REST) ----
-const FIREBASE_API_KEY = 'AIzaSyA0g1k3x5J6v8Q9R2e4F7G1H2J3K4L5M6N';
+const FIREBASE_API_KEY = 'AIzaSyDIJFx8PXtp7NpDJqpce-WP77YqPmWc8Z4';
 const EMAIL_DOMAIN = '@copchase.game';
 let idToken = '', refreshTok = '', tokenExp = 0, authUid = '';
 const jsonH = { 'Content-Type': 'application/json' };
@@ -483,7 +483,8 @@ function authErr(e) {
   if (/OPERATION_NOT_ALLOWED/.test(c)) return 'Email/password sign-in is not enabled in Firebase yet.';
   if (/TOO_MANY_ATTEMPTS/.test(c)) return 'Too many attempts. Wait a bit and try again.';
   if (/API_KEY|PERMISSION|CONFIGURATION/.test(c)) return 'Server setup problem (check the API key).';
-  return 'Could not reach the server. Try again.';
+  if (window.console) console.error('auth error', e);
+  return 'Could not reach the server. Try again. [' + (c || (e && e.message) || 'unknown') + ']';
 }
 async function doLogin(raw, pass) {
   const ek = emailLocal(raw), email = ek + EMAIL_DOMAIN;
