@@ -4,7 +4,7 @@
 // Bump CACHE when you want every player to be forced onto fresh files.
 const CACHE = 'cop-chase-v2';
 const FILES = ['./', './index.html', './manifest.json',
-  './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png'];
+  './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
