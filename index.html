@@ -118,6 +118,9 @@
   .pc.back{background:repeating-linear-gradient(45deg,#8e2b2b,#8e2b2b 6px,#b13a3a 6px,#b13a3a 12px);border:3px solid #fff;box-sizing:border-box;}
   #bjMsg{min-height:28px;font-size:20px;font-weight:700;color:#ffd98a;margin:10px 0;}
   #bj small{color:#a7d9bd;}
+  #bj input,#hr input{box-sizing:border-box;width:150px;font-size:18px;padding:10px 12px;margin:4px;border-radius:10px;border:2px solid rgba(255,255,255,.4);background:rgba(0,0,0,.35);color:#fff;text-align:center;outline:none;}
+  #bj input:focus,#hr input:focus{border-color:#ffd98a;}
+  #bj #bjSet,#hr #hrSet{background:#2f80ed;margin:4px;font-size:16px;padding:10px 18px;}
 </style>
 </head>
 <body>
@@ -178,6 +181,7 @@
       <button class="hrchip" id="hrC1">1</button><button class="hrchip" id="hrC5">5</button><button class="hrchip" id="hrC10">10</button><button class="hrchip" id="hrC25">25</button>
       <button id="hrClear">Clear</button><button id="hrMax">Max</button>
     </div>
+    <div><input id="hrCustom" type="number" inputmode="numeric" min="1" step="1" placeholder="Custom bet" autocomplete="off"><button id="hrSet">SET BET</button></div>
     <button id="hrGo">START RACE</button>
     <small>6 horses &middot; race lasts about 5 seconds<br>Pick the winner and get 3&times; your bet back. Pick wrong and the bet is gone. Play money only.</small>
   </div>
@@ -217,6 +221,7 @@
         <button class="chip" id="bjC1">1</button><button class="chip" id="bjC5">5</button><button class="chip" id="bjC10">10</button><button class="chip" id="bjC25">25</button>
         <button id="bjClear">Clear</button><button id="bjMax">Max</button>
       </div>
+      <div><input id="bjCustom" type="number" inputmode="numeric" min="1" step="1" placeholder="Custom bet" autocomplete="off"><button id="bjSet">SET BET</button></div>
       <button id="bjDeal">DEAL</button>
     </div>
     <div id="bjPlayBtns" style="display:none">
@@ -783,6 +788,13 @@ document.getElementById('bjHit').addEventListener('click', bjHit);
 document.getElementById('bjStand').addEventListener('click', bjStand);
 document.getElementById('bjDouble').addEventListener('click', bjDouble);
 document.getElementById('bjClose').addEventListener('click', closeBj);
+function bjSetCustom() {
+  if (bj.phase !== 'bet') return;
+  const inp = document.getElementById('bjCustom'), v = Math.floor(Number(inp.value));
+  if (!isFinite(v) || v < 1) { inp.value = ''; return; }
+  bj.bet = Math.min(wallet, v); inp.value = bj.bet; bjRender();
+}
+document.getElementById('bjSet').addEventListener('click', bjSetCustom);
 bjBtn.addEventListener('click', openBj);
 
 // ---------- shop ----------
@@ -1302,7 +1314,7 @@ function hrRender() {
     hrPicksEl.appendChild(b);
   }
   const lock = hrRun;
-  for (const id of ['hrC1', 'hrC5', 'hrC10', 'hrC25', 'hrClear', 'hrMax', 'hrGo', 'hrClose']) document.getElementById(id).disabled = lock;
+  for (const id of ['hrC1', 'hrC5', 'hrC10', 'hrC25', 'hrClear', 'hrMax', 'hrGo', 'hrClose', 'hrSet', 'hrCustom']) document.getElementById(id).disabled = lock;
   if (!lock && wallet < 1 && hrBet < 1) hrSay('Out of coins! Go back, run, and collect more.', false);
 }
 function hrStatic() { hrDraw([0, 0, 0, 0, 0, 0], 0, -1); }
@@ -1355,6 +1367,13 @@ for (const v of [1, 5, 10, 25]) {
 }
 document.getElementById('hrClear').addEventListener('click', () => { if (hrRun) return; hrBet = 0; hrRender(); });
 document.getElementById('hrMax').addEventListener('click', () => { if (hrRun) return; hrBet = wallet; hrRender(); });
+function hrSetCustom() {
+  if (hrRun) return;
+  const inp = document.getElementById('hrCustom'), v = Math.floor(Number(inp.value));
+  if (!isFinite(v) || v < 1) { inp.value = ''; return; }
+  hrBet = Math.min(wallet, v); inp.value = hrBet; hrRender();
+}
+document.getElementById('hrSet').addEventListener('click', hrSetCustom);
 document.getElementById('hrGo').addEventListener('click', hrStart);
 document.getElementById('hrClose').addEventListener('click', closeHr);
 hrBtn.addEventListener('click', openHr);
@@ -1376,7 +1395,7 @@ function startGame() {
   reset(); state = 'play'; overlay.style.display = 'none'; updateBjBtn();
 }
 window.addEventListener('keydown', e => {
-  if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') { if (e.target.id === 'copInput') applyCopName(e.target.value); else if (e.target.id === 'nickInput') applyNick(e.target.value); else if (e.target.id === 'duelInput') joinDuel(); else submitAuth(); } return; }
+  if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') { if (e.target.id === 'copInput') applyCopName(e.target.value); else if (e.target.id === 'nickInput') applyNick(e.target.value); else if (e.target.id === 'duelInput') joinDuel(); else if (e.target.id === 'bjCustom') bjSetCustom(); else if (e.target.id === 'hrCustom') hrSetCustom(); else submitAuth(); } return; }
   const k = e.key;
   if (bjOpen) { bjKey(e); return; }
   if (shopOpen) { if (k === 'Escape') closeShop(); return; }
@@ -1538,7 +1557,6 @@ function update(dt) {
       }
     }
     coins = coins.filter(c => !c.got && c.z > -4);
-    while (score >= nextMilestone) { burstFx(nextMilestone); nextMilestone += MILESTONE; }
 
     for (const o of obstacles) {
       if (o.fly) continue;
