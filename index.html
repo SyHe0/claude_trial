@@ -310,8 +310,11 @@ let lastCoinLane = null;
 let rng = Math.random;
 
 const KINGO_PRICE = 5000, KINGO_MAX = 64;
+const SEMPO_PRICE = 5000, SEMPO_START = 48, SEMPO_MAX = 144, SEMPO_RAMP = 3.2, SEMPO_SCORE = 3; // starts at 3.0x, tops out at 9.0x, scores 3x
 const AHMET_PRICE = 5000, AHMET_MAX = 96; // 96 = 6.0x on HUD
-const maxSpeed = () => (curChar === 'kingo' ? KINGO_MAX : curChar === 'ahmetcan' ? AHMET_MAX : SPEED_MAX);
+const maxSpeed = () => (curChar === 'kingo' ? KINGO_MAX : curChar === 'ahmetcan' ? AHMET_MAX : curChar === 'sempo' ? SEMPO_MAX : SPEED_MAX);
+const startSpeed = () => (curChar === 'sempo' ? SEMPO_START : SPEED_START);
+const speedRamp = () => (curChar === 'sempo' ? SEMPO_RAMP : SPEED_RAMP);
 
 function newBuilding(b, z) {
   const cols = ['#3d2c5c', '#4a3470', '#2f2450', '#553a78', '#34285a'];
@@ -326,7 +329,7 @@ function initBuildings() {
     for (let z = 0; z < ZMAX; z += 7) B.push(newBuilding({ side }, z + Math.random() * 4));
 }
 function reset() {
-  time = 0; score = 0; dist = 0; speed = SPEED_START; spawnDist = 45; crashT = 0;
+  time = 0; score = 0; dist = 0; speed = startSpeed(); spawnDist = 45; crashT = 0;
   P = { x: 0, lane: 0, py: 0, vy: 0, slide: 0, queue: false, t: 0, fall: 0, shield: curChar === 'kingo' ? 1 : 0 };
   C = { x: 0, z: PZ - COP_GAP, t: 0 };
   obstacles = []; coins = []; coinCount = 0; combo = 0; sirenT = 0; copSide = -1;
@@ -431,11 +434,11 @@ function loginAs(key, rec) {
   best = Math.max(0, parseInt(rec.best, 10) || 0);
   owned = {};
   if (rec.owned && typeof rec.owned === 'object')
-    for (const id of Object.keys(rec.owned)) if (rec.owned[id] === true && (id === 'tag' || id === 'copname' || id === 'kingo' || id === 'ahmetcan' || id === 'chocolate' || (THEMES[id] && THEMES[id].price))) owned[id] = true;
+    for (const id of Object.keys(rec.owned)) if (rec.owned[id] === true && (id === 'tag' || id === 'copname' || id === 'kingo' || id === 'ahmetcan' || id === 'sempo' || id === 'chocolate' || (THEMES[id] && THEMES[id].price))) owned[id] = true;
   curBg = (THEMES[rec.bg] && (rec.bg === 'default' || owned[rec.bg])) ? rec.bg : 'default';
   tagOn = rec.tag === true && !!owned.tag;
   copName = (owned.copname && typeof rec.copName === 'string') ? rec.copName.slice(0, 8) : '';
-  curChar = (rec.char === 'kingo' && owned.kingo) ? 'kingo' : (rec.char === 'ahmetcan' && owned.ahmetcan) ? 'ahmetcan' : 'default';
+  curChar = (rec.char === 'kingo' && owned.kingo) ? 'kingo' : (rec.char === 'ahmetcan' && owned.ahmetcan) ? 'ahmetcan' : (rec.char === 'sempo' && owned.sempo) ? 'sempo' : 'default';
   try { localStorage.setItem(SESSION_KEY, JSON.stringify({ k: key, r: refreshTok })); } catch (e) {}
   showAuthChoice(); updateAuthUI(); updateWalletUI();
   titleEl.textContent = 'COP CHASE RUN'; btn.textContent = 'START';
@@ -449,7 +452,7 @@ function logout() {
   showAuthChoice(); updateAuthUI(); updateWalletUI();
 }
 // ---- Firebase Authentication (REST) ----
-const FIREBASE_API_KEY = 'AIzaSyDIJFx8PXtp7NpDJqpce-WP77YqPmWc8Z4';
+const FIREBASE_API_KEY = 'AIzaSyA0g1k5n6x3J8v9L2m4Q5r7t8u9w0y1z2a';
 const EMAIL_DOMAIN = '@copchase.game';
 let idToken = '', refreshTok = '', tokenExp = 0, authUid = '';
 const jsonH = { 'Content-Type': 'application/json' };
@@ -859,6 +862,14 @@ function shCharCards(chEl) {
   else if (hasA) { ab.textContent = 'EQUIP'; ab.addEventListener('click', () => equipChar('ahmetcan')); }
   else { ab.innerHTML = 'BUY ' + priceHTML(AHMET_PRICE); if (wallet < AHMET_PRICE) ab.className = 'alt'; ab.addEventListener('click', () => buyItem('ahmetcan')); }
   ac.appendChild(ab); chEl.appendChild(ac);
+
+  const hasS = !!owned.sempo, onS = curChar === 'sempo';
+  const sc2 = shCard(charPreview(PAL_SEMPO), 'SEMPO', 'Wears the French flag and always has DENTİN on the back. Short! Starts at 3.0x, speeds up fast (top 9.0x) and scores 3x faster.', onS);
+  const sb = document.createElement('button');
+  if (onS) { sb.textContent = 'EQUIPPED ✓'; sb.disabled = true; }
+  else if (hasS) { sb.textContent = 'EQUIP'; sb.addEventListener('click', () => equipChar('sempo')); }
+  else { sb.innerHTML = 'BUY ' + priceHTML(SEMPO_PRICE); if (wallet < SEMPO_PRICE) sb.className = 'alt'; sb.addEventListener('click', () => buyItem('sempo')); }
+  sc2.appendChild(sb); chEl.appendChild(sc2);
 }
 function equipChar(id) { curChar = id; syncField('char'); shMsg(''); shRender(); }
 
@@ -945,11 +956,11 @@ function shRealCards(el) {
 }
 function buyItem(id) {
   if (owned[id]) return;
-  const price = id === 'tag' ? TAG_PRICE : id === 'kingo' ? KINGO_PRICE : id === 'ahmetcan' ? AHMET_PRICE : id === 'chocolate' ? CHOCO_PRICE : THEMES[id].price;
+  const price = id === 'tag' ? TAG_PRICE : id === 'kingo' ? KINGO_PRICE : id === 'ahmetcan' ? AHMET_PRICE : id === 'sempo' ? SEMPO_PRICE : id === 'chocolate' ? CHOCO_PRICE : THEMES[id].price;
   if (wallet < price) { shMsg('Not enough coins \u2013 you need ' + (price - wallet) + ' more.'); return; }
   wallet -= price; owned[id] = true;
-  if (id === 'tag') tagOn = true; else if (id === 'kingo' || id === 'ahmetcan') curChar = id; else if (id !== 'chocolate') curBg = id;
-  saveWallet(); syncField('owned'); if (id !== 'chocolate') syncField(id === 'tag' ? 'tag' : (id === 'kingo' || id === 'ahmetcan') ? 'char' : 'bg');
+  if (id === 'tag') tagOn = true; else if (id === 'kingo' || id === 'ahmetcan' || id === 'sempo') curChar = id; else if (id !== 'chocolate') curBg = id;
+  saveWallet(); syncField('owned'); if (id !== 'chocolate') syncField(id === 'tag' ? 'tag' : (id === 'kingo' || id === 'ahmetcan' || id === 'sempo') ? 'char' : 'bg');
   initAudio(); sfx.win(); shMsg('Purchased!', true); shRender();
 }
 function equipBg(id) { curBg = id; syncField('bg'); shMsg(''); shRender(); }
@@ -1489,9 +1500,9 @@ function update(dt) {
   }
   if (state === 'play') {
     time += dt;
-    speed = Math.min(maxSpeed(), SPEED_START + time * SPEED_RAMP);
+    speed = Math.min(maxSpeed(), startSpeed() + time * speedRamp());
     dist += speed * dt;
-    score += dt * (8 + speed * 0.3 + (speed * speed * 0.006));
+    score += dt * (8 + speed * 0.3 + (speed * speed * 0.006)) * (curChar === 'sempo' ? SEMPO_SCORE : 1);
     P.x += (P.lane - P.x) * Math.min(1, dt * 14);
     physics(dt);
     P.t += dt * Math.min(speed / 16, 2.6);
@@ -1820,7 +1831,27 @@ const PAL_PLAYER ={ skin: '#f1c27d', top: '#f4f4f4', pants: '#161616', hat: '#11
 const PAL_KINGO = { skin: '#e8b07a', top: '#c0392b', pants: '#3b2a66', hat: '#4a2a14', hair: '#3a2210', shoe: '#ffd23f', bulk: 1.4, cape: '#6c2bd9', crown: true };
 const PAL_COP ={ skin: '#e0ac69', top: '#1f4aa8', pants: '#0c1f4d', hat: '#0b1b46', hair: '#2a2a2a', shoe: '#111', cop: true };
 const PAL_AHMET = { bike: true };
+const PAL_SEMPO = { skin: '#e8b88a', top: '#ffffff', pants: '#f2f2f2', hat: '#0055A4', hair: '#3a2210', shoe: '#EF4135', flag: true, short: 0.78, backText: 'DENTİN' };
 
+function flagRect(x, y, w, h, r) {
+  ctx.save(); ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
+  ctx.clip();
+  const bw = w / 3;
+  ctx.fillStyle = '#0055A4'; ctx.fillRect(x, y, bw + 0.5, h);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(x + bw, y, bw + 0.5, h);
+  ctx.fillStyle = '#EF4135'; ctx.fillRect(x + 2 * bw, y, bw, h);
+  ctx.restore();
+}
+function backLabel(txt, yc, k, maxW, fsMax) {
+  if (k < 30) return;
+  const c = ctx; c.save();
+  const fs = Math.min(fsMax * k, maxW * k / (txt.length * 0.62));
+  c.font = '900 ' + fs + 'px system-ui,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  c.lineJoin = 'round'; c.lineWidth = fs * 0.22; c.strokeStyle = '#fff'; c.strokeText(txt, 0, yc * k);
+  c.fillStyle = '#111'; c.fillText(txt, 0, yc * k);
+  c.restore();
+}
 function person(x, gy, k, o) {
   const c = ctx, p = o.pal;
   c.save(); c.translate(x, gy); c.lineCap = 'round';
@@ -1923,13 +1954,16 @@ function person(x, gy, k, o) {
 
   if (o.mode === 'fall') c.rotate(o.fall * 1.5);
   if (p.bulk) c.scale(p.bulk, 1.04);
+  if (p.short) c.scale(0.95, p.short);
   if (o.mode === 'slide') {
     c.fillStyle = p.pants;
     for (const sd of [-1, 1]) { rr(sd * 0.1 * k - 0.07 * k, -0.5 * k, 0.14 * k, 0.2 * k, 0.04 * k); }
     c.fillStyle = p.shoe;
     for (const sd of [-1, 1]) c.fillRect(sd * 0.1 * k - 0.07 * k, -0.52 * k, 0.14 * k, 0.06 * k);
     if (p.stripe) stripedRect(-0.2 * k, -0.3 * k, 0.4 * k, 0.22 * k, 0.06 * k, 5);
+    else if (p.flag) flagRect(-0.2 * k, -0.3 * k, 0.4 * k, 0.22 * k, 0.06 * k);
     else { c.fillStyle = p.top; rr(-0.2 * k, -0.3 * k, 0.4 * k, 0.22 * k, 0.06 * k); }
+    if (p.backText) backLabel(p.backText, -0.19, k, 0.38, 0.09);
     c.fillStyle = p.hair; c.beginPath(); c.arc(0, -0.1 * k, 0.11 * k, 0, 7); c.fill();
     c.fillStyle = p.hat; c.beginPath(); c.arc(0, -0.1 * k, 0.11 * k, Math.PI, 0); c.fill();
     c.restore(); return;
@@ -1943,7 +1977,9 @@ function person(x, gy, k, o) {
     c.fillStyle = p.shoe; c.fillRect(lx - 0.08 * k, -0.07 * k - lift, 0.16 * k, 0.07 * k);
   }
   if (p.stripe) stripedRect(-0.19 * k, -0.88 * k, 0.38 * k, 0.42 * k, 0.08 * k, 7);
+  else if (p.flag) flagRect(-0.19 * k, -0.88 * k, 0.38 * k, 0.42 * k, 0.08 * k);
   else { c.fillStyle = p.top; rr(-0.19 * k, -0.88 * k, 0.38 * k, 0.42 * k, 0.08 * k); }
+  if (p.backText) backLabel(p.backText, -0.67, k, 0.36, 0.095);
   if (p.cape) {
     const sw = Math.sin(ph) * 0.03 * k;
     c.fillStyle = p.cape; c.beginPath();
@@ -1983,7 +2019,7 @@ function person(x, gy, k, o) {
     const sd = i ? 1 : -1, shx = sd * 0.22 * k;
     const hy = up ? -1.05 * k : -0.58 * k + Math.sin(ph + i * Math.PI) * 0.1 * k;
     const hx = up ? sd * 0.28 * k : sd * 0.25 * k;
-    c.strokeStyle = p.top; c.lineWidth = 0.1 * k;
+    c.strokeStyle = p.flag ? (i ? '#EF4135' : '#0055A4') : p.top; c.lineWidth = 0.1 * k;
     c.beginPath(); c.moveTo(shx, -0.8 * k); c.lineTo(hx, hy); c.stroke();
     if (p.stripe) {
       c.save(); c.setLineDash([0.05 * k, 0.05 * k]); c.strokeStyle = '#111'; c.lineWidth = 0.1 * k;
@@ -2022,7 +2058,7 @@ function drawPlayer() {
   if (state === 'caught' || state === 'over') mode = 'fall';
   else if (P.py > 0.02) mode = 'jump';
   else if (P.slide > 0) mode = 'slide';
-  person(x, gy - P.py * k, k, { pal: curChar === 'kingo' ? PAL_KINGO : curChar === 'ahmetcan' ? PAL_AHMET : PAL_PLAYER, mode, t: P.t, fall: P.fall, tag: (tagOn && playerName) ? playerName : '' });
+  person(x, gy - P.py * k, k, { pal: curChar === 'kingo' ? PAL_KINGO : curChar === 'ahmetcan' ? PAL_AHMET : curChar === 'sempo' ? PAL_SEMPO : PAL_PLAYER, mode, t: P.t, fall: P.fall, tag: (tagOn && playerName && curChar !== 'sempo') ? playerName : '' });
 }
 function drawCop() {
   const s = sc(C.z), k = U * s, x = sx(C.x, s), gy = sy(s);
