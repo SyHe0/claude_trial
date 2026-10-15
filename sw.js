@@ -2,7 +2,7 @@
 // App files: served from cache first (so the game opens instantly and offline),
 // refreshed in the background. Firebase / any other site is never touched.
 // Bump CACHE when you want every player to be forced onto fresh files.
-const CACHE = 'cop-chase-v3';
+const CACHE = 'cop-chase-v4';
 const FILES = ['./', './index.html', './manifest.json',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './apple-touch-icon.png'];
 
