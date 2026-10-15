@@ -14,10 +14,10 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>Cop Chase Run</title>
 <style>
-  html,body{margin:0;height:100%;background:#120a22;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
-  canvas{display:block;width:100vw;height:100vh;touch-action:none;}
+  html,body{margin:0;height:100%;overscroll-behavior:none;-webkit-text-size-adjust:100%;background:#120a22;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
+  canvas{display:block;position:fixed;left:0;top:0;width:100vw;height:100vh;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
   #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,5,25,.55);color:#fff;text-align:center;}
-  .card{background:rgba(25,14,50,.92);border:2px solid #ff7a00;border-radius:16px;padding:28px 36px;max-width:460px;max-height:92vh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.5);}
+  .card{background:rgba(25,14,50,.92);border:2px solid #ff7a00;border-radius:16px;padding:28px 36px;max-width:460px;max-height:92vh;max-height:92dvh;overflow:auto;box-shadow:0 10px 40px rgba(0,0,0,.5);}
   h1{margin:0 0 8px;font-size:34px;letter-spacing:2px;color:#ffb703;}
   p{margin:8px 0;line-height:1.5;color:#e6dcff;}
   .keys b{display:inline-block;background:#3b2a66;border-radius:6px;padding:1px 8px;margin:0 2px;}
@@ -141,6 +141,8 @@
     <div id="shBg" class="shgrid"></div>
     <h3>CHARACTER</h3>
     <div id="shChar" class="shgrid"></div>
+    <h3>REAL LIFE</h3>
+    <div id="shReal" class="shgrid"></div>
     <small id="shMsg"></small>
   </div>
 </div>
@@ -196,11 +198,15 @@ const CAM_U = 0.25, CAM_HY = 0.13, CAM_GY = 0.90;
 let W, H, U, HY, GY, CX, dpr;
 let skyline = [];
 function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
-  W = window.innerWidth; H = window.innerHeight;
-  cv.width = W * dpr; cv.height = H * dpr;
+  W = Math.max(1, Math.round(window.innerWidth)); H = Math.max(1, Math.round(window.innerHeight));
+  // sharp on phones too (they are 3x), but keep the pixel count sane so it stays smooth
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  if (W * H * dpr * dpr > 5e6) dpr = Math.max(1, Math.sqrt(5e6 / (W * H)));
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';   // exact size, so phone browser bars can never stretch the picture
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  U = Math.min(W / 4.4, H * CAM_U);
+  const portrait = H > W, shortLand = !portrait && H < 520;
+  U = Math.min(W / (portrait ? 3.9 : 4.4), H * (shortLand ? 0.265 : CAM_U));
   HY = H * CAM_HY; GY = H * CAM_GY; CX = W / 2;
   calcCrest();
 }
@@ -371,7 +377,7 @@ function loginAs(key, rec, pass) {
   best = Math.max(0, parseInt(rec.best, 10) || 0);
   owned = {};
   if (rec.owned && typeof rec.owned === 'object')
-    for (const id of Object.keys(rec.owned)) if (rec.owned[id] === true && (id === 'tag' || id === 'copname' || id === 'kingo' || (THEMES[id] && THEMES[id].price))) owned[id] = true;
+    for (const id of Object.keys(rec.owned)) if (rec.owned[id] === true && (id === 'tag' || id === 'copname' || id === 'kingo' || id === 'chocolate' || (THEMES[id] && THEMES[id].price))) owned[id] = true;
   curBg = (THEMES[rec.bg] && (rec.bg === 'default' || owned[rec.bg])) ? rec.bg : 'default';
   tagOn = rec.tag === true && !!owned.tag;
   copName = (owned.copname && typeof rec.copName === 'string') ? rec.copName.slice(0, 8) : '';
@@ -649,7 +655,7 @@ document.getElementById('bjClose').addEventListener('click', closeBj);
 bjBtn.addEventListener('click', openBj);
 
 // ---------- shop (backgrounds + character) ----------
-const TAG_PRICE = 500;
+const TAG_PRICE = 500, CHOCO_PRICE = 5000;
 const shopEl = document.getElementById('shop'), shopBtn = document.getElementById('shopBtn'), shMsgEl = document.getElementById('shMsg');
 let shopOpen = false;
 function shMsg(t, ok) { shMsgEl.textContent = t || ''; shMsgEl.style.color = ok ? '#8affb0' : '#ff8a8a'; }
@@ -691,6 +697,7 @@ function shRender() {
   }
   shNickCard(chEl);
   shCopCard(chEl);
+  shRealCards(document.getElementById('shReal'));
 }
 // ----- playable characters: the classic thief and KINGO -----
 function charPreview(pal) {
@@ -790,13 +797,27 @@ function applyCopName(raw) {
   saveWallet(); syncField('owned'); syncField('copName');
   initAudio(); sfx.win(); shMsg('Police name changed!', true); shRender();
 }
+// ----- real-life rewards (bought once; the owner can see who owns one in the database) -----
+function shRealCards(el) {
+  el.textContent = '';
+  const has = !!owned.chocolate;
+  const pv = document.createElement('div'); pv.className = 'prev tagprev';
+  const em = document.createElement('span'); em.style.fontSize = '44px'; em.style.lineHeight = '1'; em.textContent = '\u{1F36B}'; pv.appendChild(em);
+  const card = shCard(pv, 'Chocolate in Real Life', has
+    ? 'It\'s yours! Show your username (' + userKey + ') to the game\'s owner to claim your chocolate.'
+    : 'A real chocolate, for real. Buy it once, then show your username to the game\'s owner to claim it.', has);
+  const b = document.createElement('button');
+  if (has) { b.textContent = 'OWNED \u2713'; b.disabled = true; }
+  else { b.innerHTML = 'BUY ' + priceHTML(CHOCO_PRICE); if (wallet < CHOCO_PRICE) b.className = 'alt'; b.addEventListener('click', () => buyItem('chocolate')); }
+  card.appendChild(b); el.appendChild(card);
+}
 function buyItem(id) {
   if (owned[id]) return;
-  const price = id === 'tag' ? TAG_PRICE : id === 'kingo' ? KINGO_PRICE : THEMES[id].price;
+  const price = id === 'tag' ? TAG_PRICE : id === 'kingo' ? KINGO_PRICE : id === 'chocolate' ? CHOCO_PRICE : THEMES[id].price;
   if (wallet < price) { shMsg('Not enough coins \u2013 you need ' + (price - wallet) + ' more.'); return; }
   wallet -= price; owned[id] = true;
-  if (id === 'tag') tagOn = true; else if (id === 'kingo') curChar = 'kingo'; else curBg = id;
-  saveWallet(); syncField('owned'); syncField(id === 'tag' ? 'tag' : id === 'kingo' ? 'char' : 'bg');
+  if (id === 'tag') tagOn = true; else if (id === 'kingo') curChar = 'kingo'; else if (id !== 'chocolate') curBg = id;
+  saveWallet(); syncField('owned'); if (id !== 'chocolate') syncField(id === 'tag' ? 'tag' : id === 'kingo' ? 'char' : 'bg');
   initAudio(); sfx.win(); shMsg('Purchased!', true); shRender();
 }
 function equipBg(id) { curBg = id; syncField('bg'); shMsg(''); shRender(); }
@@ -1411,7 +1432,7 @@ function drawWarnings() {
   for (const o of obstacles) {
     if (!o.k || o.z < 26) continue;
     // sits on the road far ahead, near the horizon, in the lane the truck will arrive in
-    const ws = sc(Math.min(65, ZV - 6)), x = sx(o.lane, ws), r = Math.max(10, H * 0.03), y = sy(ws) - r * 0.85;
+    const ws = sc(Math.min(65, ZV - 6)), x = sx(o.lane, ws), r = Math.max(8, H * 0.022), y = sy(ws) - r * 0.85;
     ctx.fillStyle = 'rgba(255,59,48,.35)'; ctx.beginPath(); ctx.ellipse(x, sy(ws), r * 1.4, r * 0.3, 0, 0, 7); ctx.fill();
     ctx.save(); ctx.globalAlpha = flash ? 1 : 0.5; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(x, y - r); ctx.lineTo(x + r * 1.1, y + r * 0.85); ctx.lineTo(x - r * 1.1, y + r * 0.85); ctx.closePath();
@@ -1532,6 +1553,8 @@ function frame(now) {
   try { update(dt); render(); } catch (e) { if (window.console) console.error(e); }
 }
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => { setTimeout(resize, 150); setTimeout(resize, 600); });
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 resize(); makeSkyline(); reset(); updateWalletUI(); updateAuthUI(); restoreSession(); loadBoard();
 requestAnimationFrame(frame);
 })();
