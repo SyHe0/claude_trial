@@ -864,7 +864,8 @@ document.getElementById('shopClose').addEventListener('click', closeShop);
 // taken from the database clock). Whoever survives LONGER wins 900, the loser gets 100.
 // When one player gets caught, the other wins the instant their own run time passes the caught player's time. If both started together
 // that is immediately; if one started late they have to keep running until they beat that time.
-// Everything lives under /duels/<CODE>: a / b = the two players (write-once, t = database clock), res/a, res/b = survival time in ms (write-once).
+// Everything lives under /duels/<CODE>: a / b = the two players (write-once, t = database clock), res/a, res/b = survival time in ms (write-once),
+// done/a, done/b = "I collected my result". When both are done the room is deleted, so the code can be used again.
 const DUEL_FEE = 500, DUEL_WIN = 900, DUEL_LOSE = 100, DUEL_KEY = 'copChaseDuel', DUEL_FORFEIT_MS = 240000, DUEL_LEAD = 5000;
 const fmtMs = ms => (ms / 1000).toFixed(2) + 's';
 const duelEl = document.getElementById('duel'), duelBtn = document.getElementById('duelBtn'), duBody = document.getElementById('duBody'), duMsgEl = document.getElementById('duMsg');
@@ -927,6 +928,9 @@ function duRender() {
     if (Date.now() - duel.since > DUEL_FORFEIT_MS) {
       const f = duEl('button', 'alt', 'OPPONENT LEFT? CLAIM WIN'); f.addEventListener('click', duForfeit); duBody.appendChild(f);
     }
+  } else if (ph === 'result' && duel.outcome === 'closed') {
+    duBody.appendChild(duEl('p', '', 'This duel was closed while you were away.'));
+    const c = duEl('button', '', 'CLOSE'); c.addEventListener('click', closeDuel); duBody.appendChild(c);
   } else if (ph === 'result') {
     const t = duel.outcome === 'win' ? 'YOU WIN!' : duel.outcome === 'lose' ? 'YOU LOSE' : 'TIE';
     const r = duEl('div', 'res', t); r.style.color = duel.outcome === 'win' ? '#7dff9e' : duel.outcome === 'lose' ? '#ff8a8a' : '#ffd98a'; duBody.appendChild(r);
@@ -956,10 +960,14 @@ async function joinDuel() {
   if (wallet < DUEL_FEE) { duMsg('You need ' + DUEL_FEE + ' coins to duel (you have ' + wallet + ').'); return; }
   duelBusy = true; duMsg('Connecting…', true);
   try {
-    const room = await duGet(code);
-    if (room && ((room.a && room.a.u === userKey) || (room.b && room.b.u === userKey))) { duMsg('You already used this code. Pick a new one.'); return; }
-    if (room && room.res && room.res.a !== undefined && room.res.b !== undefined) { duMsg('That code was already used. Pick a new one.'); return; }
-    if (room && room.a && room.b) { duMsg('That room is full. Pick another code.'); return; }
+    let room = await duGet(code);
+    // a finished match frees its code again once both players have collected their result
+    if (room && room.res && room.res.a !== undefined && room.res.b !== undefined) {
+      if (duDeletable(room) && await duDelete(code)) room = null;
+      else { duMsg('That code is still finishing its last duel. Try again in a moment or pick another code.'); return; }
+    }
+    if (room && ((room.a && room.a.u === userKey) || (room.b && room.b.u === userKey))) { duMsg('You are already in a duel with this code.'); return; }
+    if (room && room.a && room.b) { duMsg('That code is being used by a duel right now. Pick another code.'); return; }
     const me = { u: userKey, n: playerName, t: { '.sv': 'timestamp' } };   // t = the database's own clock
     let slot = null, wroteAt = 0;
     for (const s of (room && room.a ? ['b'] : ['a', 'b'])) {   // the database only lets ONE player take each slot
@@ -1008,6 +1016,11 @@ async function duTick() {
       const res = await duGet(duel.code, 'res');
       if (duel !== myDuel || duel.phase !== 'waitres') return;
       if (res && res.a !== undefined && res.b !== undefined) { duSettle(res); return; }
+      if (!res) {
+        const room = await duGet(duel.code);
+        if (duel !== myDuel || duel.phase !== 'waitres') return;
+        if (!room) { duGone(); return; }
+      }
       if (!res || res[duel.slot] === undefined) duPut(duel.code, 'res/' + duel.slot, duel.myScore).catch(() => {});   // my score didn't arrive yet: send again
       if (duelOpen && Date.now() - duel.since > DUEL_FORFEIT_MS && !duBody.querySelector('button')) duRender();
     }
@@ -1069,6 +1082,34 @@ async function duForfeit() {
   if (!duel || duel.phase !== 'waitres') return;
   try { await duPut(duel.code, 'res/' + duOther(), -1); duTick(); } catch (e) { duMsg('Could not reach the server.'); }
 }
+// A finished duel frees its code once both players have collected their result (each writes done/<slot>).
+// If one player forfeited / left, the other player's "done" is enough, so a code never stays blocked forever.
+function duDeletable(room) {
+  const r = room && room.res, d = (room && room.done) || {};
+  if (!r || r.a === undefined || r.b === undefined) return false;
+  return (!!d.a && !!d.b) || ((!!d.a || !!d.b) && (r.a === -1 || r.b === -1));
+}
+async function duDelete(code) {
+  try { const r = await fetch(duUrl(code), { method: 'DELETE' }); return r.ok; } catch (e) { return false; }
+}
+async function duCleanup(code, slot) {
+  for (let i = 0; i < 4; i++) {
+    try {
+      await duPut(code, 'done/' + slot, true);   // "I have my result" (write-once)
+      const room = await duGet(code);
+      if (!room) return;                          // the other player already freed the code
+      if (duDeletable(room)) await duDelete(code);
+      return;
+    } catch (e) { await new Promise(r => setTimeout(r, 1500)); }
+  }
+}
+// the room was removed while I was away (the other player had already left and the code was freed)
+function duGone() {
+  duStopTimer(); duStopLive();
+  duel.phase = 'result'; duel.outcome = 'closed'; duel.pay = 0;
+  try { localStorage.removeItem(DUEL_KEY); } catch (e) {}
+  duRender();
+}
 function duSettle(res) {
   if (!duel || duel.phase === 'result') return;
   duStopTimer(); duStopLive();
@@ -1080,6 +1121,7 @@ function duSettle(res) {
   wallet += duel.pay; saveWallet();
   try { localStorage.removeItem(DUEL_KEY); } catch (e) {}   // paid out: never pay twice
   rng = Math.random; initAudio(); (duel.outcome === 'lose' ? sfx.busted : sfx.win)();
+  duCleanup(duel.code, duel.slot);
   // names: take the opponent's from the room (fetched once more, best effort)
   duRender();
 }
