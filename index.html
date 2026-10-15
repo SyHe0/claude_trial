@@ -2,7 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#120a22">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Cop Chase">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <title>Cop Chase Run</title>
 <style>
   html,body{margin:0;height:100%;background:#120a22;overflow:hidden;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;}
@@ -195,8 +203,15 @@ function resize() {
   HY = H * CAM_HY; GY = H * CAM_GY; CX = W / 2;
 }
 const sc = z => 1 / (1 + Math.max(z, -6) / D);   // clamped: objects behind the camera can never get a negative size
-const sy = s => HY + (GY - HY) * s;
-const sx = (wx, s) => CX + wx * U * s;
+// ----- "round world" bend: the farther away something is, the more it sinks below the horizon
+// (like driving over a planet) and the road slowly sways left/right. 0 = flat world. -----
+const BEND_Y = 0.10;   // sink at the far end of the road, as a fraction of screen height
+const BEND_X = 0.09;   // max sideways sway at the far end, as a fraction of screen width
+let bendSway = 0;      // -1..1, changes slowly while you run
+const zOfS = s => D * (1 / s - 1);
+const bendK = s => { const z = zOfS(s); if (z <= 0) return 0; const q = z / ZMAX; return q * q; };
+const sy = s => HY + (GY - HY) * s + H * BEND_Y * bendK(s);
+const sx = (wx, s) => CX + wx * U * s + W * BEND_X * bendSway * bendK(s);
 
 function makeSkyline() {
   skyline = [];
@@ -1016,12 +1031,17 @@ function stripedRect(x, y, w, h, r, n) {
   ctx.restore();
 }
 function roadQuad(x0, x1, za, zb, color) {
-  const sa = sc(za), sb = sc(zb);
   ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.moveTo(sx(x0, sa), sy(sa)); ctx.lineTo(sx(x1, sa), sy(sa));
-  ctx.lineTo(sx(x1, sb), sy(sb)); ctx.lineTo(sx(x0, sb), sy(sb));
-  ctx.closePath(); ctx.fill();
+  // long strips are cut into short pieces so they follow the curve of the world
+  const n = Math.max(1, Math.ceil((zb - za) / 3));
+  for (let i = 0; i < n; i++) {
+    const a = za + (zb - za) * i / n, b = za + (zb - za) * (i + 1) / n + (i < n - 1 ? 0.15 : 0);
+    const sa = sc(a), sb = sc(b);
+    ctx.beginPath();
+    ctx.moveTo(sx(x0, sa), sy(sa)); ctx.lineTo(sx(x1, sa), sy(sa));
+    ctx.lineTo(sx(x1, sb), sy(sb)); ctx.lineTo(sx(x0, sb), sy(sb));
+    ctx.closePath(); ctx.fill();
+  }
 }
 const fog = z => z > 55 ? Math.max(0, (ZMAX - z) / 35) : 1;
 
@@ -1113,9 +1133,10 @@ function drawBackground() {
     if (zb > za) for (const lx of [-0.5, 0.5]) roadQuad(lx - 0.03, lx + 0.03, za, Math.min(zb, ZMAX), '#e8e8f0');
   }
   // horizon haze
-  const hz = ctx.createLinearGradient(0, HY, 0, HY + (GY - HY) * 0.3);
+  const hzH = (GY - HY) * 0.3 + H * BEND_Y;
+  const hz = ctx.createLinearGradient(0, HY, 0, HY + hzH);
   hz.addColorStop(0, T.haze); hz.addColorStop(1, fadeOut(T.haze));
-  ctx.fillStyle = hz; ctx.fillRect(0, HY, W, (GY - HY) * 0.3);
+  ctx.fillStyle = hz; ctx.fillRect(0, HY, W, hzH);
 }
 
 function drawPalm(b) {
@@ -1433,6 +1454,7 @@ function drawFx() {
 function render() {
   ctx.save();
   if (state === 'caught' && crashT < 0.5) ctx.translate((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10);
+  bendSway = Math.sin(dist * 0.008) * 0.75 + Math.sin(performance.now() / 4000) * 0.25;
   drawBackground();
   const list = [];
   for (const b of B) list.push({ z: b.z, f: () => drawBuilding(b) });
@@ -1500,6 +1522,10 @@ window.addEventListener('resize', resize);
 resize(); makeSkyline(); reset(); updateWalletUI(); updateAuthUI(); restoreSession(); loadBoard();
 requestAnimationFrame(frame);
 })();
+// PWA: lets players install the game ("Add to Home Screen") and open it offline
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+}
 </script>
 </body>
 </html>
