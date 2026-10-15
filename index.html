@@ -197,7 +197,7 @@
 (() => {
 'use strict';
 const cv = document.getElementById('game');
-let ctx = cv.getContext('2d');   // 'let': the shop briefly points it at a small preview canvas
+let ctx = cv.getContext('2d');
 const overlay = document.getElementById('overlay');
 const titleEl = document.getElementById('title');
 const msgEl = document.getElementById('msg');
@@ -217,37 +217,31 @@ const who = document.getElementById('who');
 // ---------- layout / projection ----------
 const ZMAX = 90, D = 14;
 const PZ = 9;          // distance of the runner from the camera
-const COP_GAP = 9.5;   // how far behind the runner the cop chases (same lane)
-// Camera: bigger CAM_GY-CAM_HY relative to CAM_U = looking more from above.
-// (raise CAM_HY/CAM_U values or lower CAM_GY to tilt back down)
+const COP_GAP = 9.5;   // how far behind the runner the cop chases
 const CAM_U = 0.25, CAM_HY = 0.13, CAM_GY = 0.90;
 let W, H, U, HY, GY, CX, dpr;
 let skyline = [];
 function resize() {
   W = Math.max(1, Math.round(window.innerWidth)); H = Math.max(1, Math.round(window.innerHeight));
-  // sharp on phones too (they are 3x), but keep the pixel count sane so it stays smooth
   dpr = Math.min(window.devicePixelRatio || 1, 3);
   if (W * H * dpr * dpr > 5e6) dpr = Math.max(1, Math.sqrt(5e6 / (W * H)));
   cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
-  cv.style.width = W + 'px'; cv.style.height = H + 'px';   // exact size, so phone browser bars can never stretch the picture
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   const portrait = H > W, shortLand = !portrait && H < 520;
   U = Math.min(W / (portrait ? 3.9 : 4.4), H * (shortLand ? 0.265 : CAM_U));
   HY = H * CAM_HY; GY = H * CAM_GY; CX = W / 2;
   calcCrest();
 }
-const sc = z => 1 / (1 + Math.max(z, -6) / D);   // clamped: objects behind the camera can never get a negative size
-// ----- "round world" bend: the farther away something is, the more it sinks below the horizon
-// (like driving over a planet) and the road slowly sways left/right. 0 = flat world. -----
-const BEND_Y = 0.10;   // sink at the far end of the road, as a fraction of screen height
-const BEND_X = 0.09;   // max sideways sway at the far end, as a fraction of screen width
-let bendSway = 0;      // -1..1, changes slowly while you run
+const sc = z => 1 / (1 + Math.max(z, -6) / D);
+const BEND_Y = 0.10;
+const BEND_X = 0.09;
+let bendSway = 0;
 const zOfS = s => D * (1 / s - 1);
 const bendK = s => { const z = zOfS(s); if (z <= 0) return 0; const q = z / ZMAX; return q * q; };
 const sy = s => HY + (GY - HY) * s + H * BEND_Y * bendK(s);
 const sx = (wx, s) => CX + wx * U * s + W * BEND_X * bendSway * bendK(s);
-// The top of the "hill": past this distance the road is hidden behind the curve, so nothing farther is drawn
-// (otherwise the far road would fold back down over the near road).
+
 let ZV = ZMAX, CREST_Y = 0;
 function calcCrest() {
   let best = Infinity, bz = ZMAX;
@@ -270,20 +264,21 @@ let state = 'menu';
 let P, C, obstacles = [], B = [], coins = [];
 let coinCount = 0, copSide = -1, lastCoinT = 0, combo = 0, sirenT = 0, sirenHi = false;
 let speed = 12, time = 0, score = 0, dist = 0, spawnDist = 45, crashT = 0, overAt = 0;
-let best = 0;   // loaded from the logged-in account
-let owned = {}, curBg = 'default', tagOn = false, copName = '', curChar = 'default';   // shop items of the logged-in account
-const MILESTONE = 5000;                              // colour burst every N points
+let best = 0;
+let owned = {}, curBg = 'default', tagOn = false, copName = '', curChar = 'default';
+const MILESTONE = 5000;
 let nextMilestone = MILESTONE, fx = [], fxMain = null, pop = null;
 
 const JUMP_V = 7.6, GRAV = 22;
-const SPEED_START = 16, SPEED_MAX = 80, SPEED_RAMP = 0.7;   // 80 = 5.0x on the HUD; ramp = units/s gained per second
-const ONC_K = 0.55;                                          // oncoming trucks drive toward you this much faster than the world scrolls
-const ONC_Z = PZ + (85 - PZ) * (1 + ONC_K);                  // spawn distance, so a truck arrives exactly when a normal row would
+const SPEED_START = 16, SPEED_MAX = 80, SPEED_RAMP = 0.7;
+const ONC_K = 0.55;
+const ONC_Z = PZ + (85 - PZ) * (1 + ONC_K);
 let lastCoinLane = null;
-let rng = Math.random;   // obstacle course randomness (seeded in a duel so both players get the same course)
-// KINGO (shop character): 4.0x top speed instead of 5.0x, and one free obstacle hit per run
-const KINGO_PRICE = 5000, KINGO_MAX = 64;                    // 64 = 4.0x on the HUD
-const maxSpeed = () => (curChar === 'kingo' ? KINGO_MAX : SPEED_MAX);
+let rng = Math.random;
+
+const KINGO_PRICE = 5000, KINGO_MAX = 64;
+const AHMET_PRICE = 5000, AHMET_MAX = 96; // 96 = 6.0x on HUD
+const maxSpeed = () => (curChar === 'kingo' ? KINGO_MAX : curChar === 'ahmetcan' ? AHMET_MAX : SPEED_MAX);
 
 function newBuilding(b, z) {
   const cols = ['#3d2c5c', '#4a3470', '#2f2450', '#553a78', '#34285a'];
@@ -306,7 +301,7 @@ function reset() {
   initBuildings();
 }
 
-// ---------- sound (synthesised with WebAudio, no files needed) ----------
+// ---------- sound ----------
 const muteBtn = document.getElementById('mute');
 let AC = null, muted = false;
 try { muted = localStorage.getItem('copChaseMuted') === '1'; } catch (e) {}
@@ -359,10 +354,8 @@ const sfx = {
   siren() { sirenHi = !sirenHi; const f = sirenHi ? 880 : 660; tone(f, f, 0.45, 'sine', 0.02); }
 };
 
-// ---------- accounts (Firebase Realtime Database, REST) ----------
-// Every account lives at  /users/<username-lowercase>  =  { name, pass, wallet, best, created }
-// -> open Firebase console > Realtime Database > Data > users  to see everybody.
-let playerName = '';      // logged-in username ('' = logged out)
+// ---------- accounts ----------
+let playerName = '';
 let userKey = '';
 const SESSION_KEY = 'copChaseSession';
 let authMode = 'login', authBusy = false, sessionChecking = false;
@@ -404,11 +397,11 @@ function loginAs(key, rec, pass) {
   best = Math.max(0, parseInt(rec.best, 10) || 0);
   owned = {};
   if (rec.owned && typeof rec.owned === 'object')
-    for (const id of Object.keys(rec.owned)) if (rec.owned[id] === true && (id === 'tag' || id === 'copname' || id === 'kingo' || id === 'chocolate' || (THEMES[id] && THEMES[id].price))) owned[id] = true;
+    for (const id of Object.keys(rec.owned)) if (rec.owned[id] === true && (id === 'tag' || id === 'copname' || id === 'kingo' || id === 'ahmetcan' || id === 'chocolate' || (THEMES[id] && THEMES[id].price))) owned[id] = true;
   curBg = (THEMES[rec.bg] && (rec.bg === 'default' || owned[rec.bg])) ? rec.bg : 'default';
   tagOn = rec.tag === true && !!owned.tag;
   copName = (owned.copname && typeof rec.copName === 'string') ? rec.copName.slice(0, 8) : '';
-  curChar = (rec.char === 'kingo' && owned.kingo) ? 'kingo' : 'default';
+  curChar = (rec.char === 'kingo' && owned.kingo) ? 'kingo' : (rec.char === 'ahmetcan' && owned.ahmetcan) ? 'ahmetcan' : 'default';
   try { localStorage.setItem(SESSION_KEY, JSON.stringify({ k: key, p: pass })); } catch (e) {}
   showAuthChoice(); updateAuthUI(); updateWalletUI();
   titleEl.textContent = 'COP CHASE RUN'; btn.textContent = 'START';
@@ -460,7 +453,6 @@ async function restoreSession() {
   }
   sessionChecking = false; updateAuthUI();
 }
-// wallet / best are written to the account right away (retried if the network drops)
 const dirty = new Set();
 let syncChain = Promise.resolve();
 function syncField(f) {
@@ -482,10 +474,7 @@ document.getElementById('authBack').addEventListener('click', showAuthChoice);
 authSubmit.addEventListener('click', submitAuth);
 logoutBtn.addEventListener('click', logout);
 
-// ---------- leaderboard (name + score) ----------
-// To make it GLOBAL, paste your Firebase Realtime Database URL here, e.g.
-//   'https://your-project-default-rtdb.europe-west1.firebasedatabase.app'
-// Leave it empty to keep a leaderboard on this device only.
+// ---------- leaderboard ----------
 const LEADERBOARD_URL = 'https://claudetrial-12631-default-rtdb.europe-west1.firebasedatabase.app/';
 const BOARD_SIZE = 10;
 let board = [], boardOnline = false;
@@ -533,7 +522,6 @@ function renderBoard(hl) {
     board.forEach(e => {
       const li = document.createElement('li');
       if (!marked && e.s === hl && e.n === playerName) { marked = true; li.className = 'me'; }
-      // names come from a public database, so they are inserted as plain text only
       const sc = document.createElement('span'); sc.className = 'sc'; sc.textContent = e.s;
       const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = e.n;
       li.appendChild(sc); li.appendChild(nm); ol.appendChild(li);
@@ -544,8 +532,8 @@ function renderBoard(hl) {
     : 'Server not connected yet – showing scores from this device only';
 }
 
-// ---------- wallet + blackjack (play money only) ----------
-let wallet = 0;   // loaded from the logged-in account
+// ---------- wallet + blackjack ----------
+let wallet = 0;
 const walletLine = document.getElementById('walletLine');
 const bjEl = document.getElementById('bj'), bjBtn = document.getElementById('bjBtn');
 function updateWalletUI() {
@@ -683,7 +671,7 @@ document.getElementById('bjDouble').addEventListener('click', bjDouble);
 document.getElementById('bjClose').addEventListener('click', closeBj);
 bjBtn.addEventListener('click', openBj);
 
-// ---------- shop (backgrounds + character) ----------
+// ---------- shop ----------
 const TAG_PRICE = 500, CHOCO_PRICE = 5000;
 const shopEl = document.getElementById('shop'), shopBtn = document.getElementById('shopBtn'), shMsgEl = document.getElementById('shMsg');
 let shopOpen = false;
@@ -728,42 +716,48 @@ function shRender() {
   shCopCard(chEl);
   shRealCards(document.getElementById('shReal'));
 }
-// ----- playable characters: the classic thief and KINGO -----
+
 function charPreview(pal) {
   const cvp = document.createElement('canvas'); cvp.width = 150; cvp.height = 88;
   cvp.style.display = 'block';
   const pv = document.createElement('div'); pv.className = 'prev tagprev'; pv.appendChild(cvp);
-  const real = ctx; ctx = cvp.getContext('2d');   // draw with the normal character renderer onto the small canvas
+  const real = ctx; ctx = cvp.getContext('2d');
   try { person(75, 84, 66, { pal, mode: 'run', t: 0 }); } catch (e) {}
   ctx = real;
   return pv;
 }
 function shCharCards(chEl) {
-  const thief = curChar !== 'kingo';
+  const thief = curChar === 'default';
   const tc = shCard(charPreview(PAL_PLAYER), 'Classic Thief', 'The striped thief with the loot sack. Top speed 5.0x.', thief);
   const tb = document.createElement('button');
   if (thief) { tb.textContent = 'EQUIPPED ✓'; tb.disabled = true; }
   else { tb.textContent = 'EQUIP'; tb.addEventListener('click', () => equipChar('default')); }
   tc.appendChild(tb); chEl.appendChild(tc);
 
-  const has = !!owned.kingo, on = curChar === 'kingo';
-  const kc = shCard(charPreview(PAL_KINGO), 'KINGO', 'Big and heavy. Survives ONE obstacle hit per run (it flies off the screen) – but not oncoming trucks. Top speed 4.0x.', on);
+  const hasK = !!owned.kingo, onK = curChar === 'kingo';
+  const kc = shCard(charPreview(PAL_KINGO), 'KINGO', 'Big and heavy. Survives ONE obstacle hit per run. Top speed 4.0x.', onK);
   const kb = document.createElement('button');
-  if (on) { kb.textContent = 'EQUIPPED ✓'; kb.disabled = true; }
-  else if (has) { kb.textContent = 'EQUIP'; kb.addEventListener('click', () => equipChar('kingo')); }
+  if (onK) { kb.textContent = 'EQUIPPED ✓'; kb.disabled = true; }
+  else if (hasK) { kb.textContent = 'EQUIP'; kb.addEventListener('click', () => equipChar('kingo')); }
   else { kb.innerHTML = 'BUY ' + priceHTML(KINGO_PRICE); if (wallet < KINGO_PRICE) kb.className = 'alt'; kb.addEventListener('click', () => buyItem('kingo')); }
   kc.appendChild(kb); chEl.appendChild(kc);
+
+  const hasA = !!owned.ahmetcan, onA = curChar === 'ahmetcan';
+  const ac = shCard(charPreview(PAL_AHMET), 'AhmetCan', 'Motor sürerek kaçar. Zıplarken ön kaldırır, eğilince kafasını yatar. Maksimum hızı 6.0x!', onA);
+  const ab = document.createElement('button');
+  if (onA) { ab.textContent = 'EQUIPPED ✓'; ab.disabled = true; }
+  else if (hasA) { ab.textContent = 'EQUIP'; ab.addEventListener('click', () => equipChar('ahmetcan')); }
+  else { ab.innerHTML = 'BUY ' + priceHTML(AHMET_PRICE); if (wallet < AHMET_PRICE) ab.className = 'alt'; ab.addEventListener('click', () => buyItem('ahmetcan')); }
+  ac.appendChild(ab); chEl.appendChild(ac);
 }
 function equipChar(id) { curChar = id; syncField('char'); shMsg(''); shRender(); }
 
-// ----- rename the text on the cop's shirt (500 coins every time) -----
 const COP_PRICE = 500, BAD_NAME = /porno|porn|oç|burçak|doğa|doga|burcak/;
 let copEditing = false, nickEditing = false;
-// ----- change your own display name (500 coins every time; the login username never changes) -----
 function shNickCard(chEl) {
   const pv = document.createElement('div'); pv.className = 'prev tagprev';
   const pl = document.createElement('span'); pl.className = 'tagplate'; pl.textContent = playerName; pv.appendChild(pl);
-  const card = shCard(pv, 'Your Name', 'Change the name shown on the leaderboard and your name tag. Every change costs ' + COP_PRICE + ' coins. (Your login username stays the same.)', false);
+  const card = shCard(pv, 'Your Name', 'Change the name shown on the leaderboard and your name tag. Every change costs ' + COP_PRICE + ' coins.', false);
   if (nickEditing) {
     const inp = document.createElement('input'); inp.id = 'nickInput'; inp.maxLength = 12; inp.placeholder = 'New name (3-12)'; inp.autocomplete = 'off'; inp.spellcheck = false;
     const ok = document.createElement('button'); ok.innerHTML = 'CONFIRM ' + priceHTML(COP_PRICE); ok.addEventListener('click', () => applyNick(inp.value));
@@ -826,7 +820,6 @@ function applyCopName(raw) {
   saveWallet(); syncField('owned'); syncField('copName');
   initAudio(); sfx.win(); shMsg('Police name changed!', true); shRender();
 }
-// ----- real-life rewards (bought once; the owner can see who owns one in the database) -----
 function shRealCards(el) {
   el.textContent = '';
   const has = !!owned.chocolate;
@@ -842,11 +835,11 @@ function shRealCards(el) {
 }
 function buyItem(id) {
   if (owned[id]) return;
-  const price = id === 'tag' ? TAG_PRICE : id === 'kingo' ? KINGO_PRICE : id === 'chocolate' ? CHOCO_PRICE : THEMES[id].price;
+  const price = id === 'tag' ? TAG_PRICE : id === 'kingo' ? KINGO_PRICE : id === 'ahmetcan' ? AHMET_PRICE : id === 'chocolate' ? CHOCO_PRICE : THEMES[id].price;
   if (wallet < price) { shMsg('Not enough coins \u2013 you need ' + (price - wallet) + ' more.'); return; }
   wallet -= price; owned[id] = true;
-  if (id === 'tag') tagOn = true; else if (id === 'kingo') curChar = 'kingo'; else if (id !== 'chocolate') curBg = id;
-  saveWallet(); syncField('owned'); if (id !== 'chocolate') syncField(id === 'tag' ? 'tag' : id === 'kingo' ? 'char' : 'bg');
+  if (id === 'tag') tagOn = true; else if (id === 'kingo' || id === 'ahmetcan') curChar = id; else if (id !== 'chocolate') curBg = id;
+  saveWallet(); syncField('owned'); if (id !== 'chocolate') syncField(id === 'tag' ? 'tag' : (id === 'kingo' || id === 'ahmetcan') ? 'char' : 'bg');
   initAudio(); sfx.win(); shMsg('Purchased!', true); shRender();
 }
 function equipBg(id) { curBg = id; syncField('bg'); shMsg(''); shRender(); }
@@ -860,12 +853,6 @@ shopBtn.addEventListener('click', openShop);
 document.getElementById('shopClose').addEventListener('click', closeShop);
 
 // ---------- online 1v1 duel ----------
-// Both players type the same code, each pays 500 coins and they start the SAME course at the SAME moment (a shared start time
-// taken from the database clock). Whoever survives LONGER wins 900, the loser gets 100.
-// When one player gets caught, the other wins the instant their own run time passes the caught player's time. If both started together
-// that is immediately; if one started late they have to keep running until they beat that time.
-// Everything lives under /duels/<CODE>: a / b = the two players (write-once, t = database clock), res/a, res/b = survival time in ms (write-once),
-// done/a, done/b = "I collected my result". When both are done the room is deleted, so the code can be used again.
 const DUEL_FEE = 500, DUEL_WIN = 900, DUEL_LOSE = 100, DUEL_KEY = 'copChaseDuel', DUEL_FORFEIT_MS = 240000, DUEL_LEAD = 5000;
 const fmtMs = ms => (ms / 1000).toFixed(2) + 's';
 const duelEl = document.getElementById('duel'), duelBtn = document.getElementById('duelBtn'), duBody = document.getElementById('duBody'), duMsgEl = document.getElementById('duMsg');
@@ -874,7 +861,6 @@ function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; le
 const duUrl = (code, path) => boardBase() + '/duels/' + code + (path ? '/' + path : '') + '.json';
 const duMsg = (t, good) => { duMsgEl.textContent = t || ''; duMsgEl.style.color = good ? '#7dff9e' : '#ff8a8a'; };
 async function duGet(code, path) { const r = await fetch(duUrl(code, path)); if (!r.ok) throw new Error('http ' + r.status); return r.json(); }
-// resolves false when the database refuses (slot / score already taken), throws when the network is down
 async function duPut(code, path, val) {
   const r = await fetch(duUrl(code, path), { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(val) });
   return r.ok;
@@ -961,21 +947,19 @@ async function joinDuel() {
   duelBusy = true; duMsg('Connecting…', true);
   try {
     let room = await duGet(code);
-    // a finished match frees its code again once both players have collected their result
     if (room && room.res && room.res.a !== undefined && room.res.b !== undefined) {
       if (duDeletable(room) && await duDelete(code)) room = null;
       else { duMsg('That code is still finishing its last duel. Try again in a moment or pick another code.'); return; }
     }
     if (room && ((room.a && room.a.u === userKey) || (room.b && room.b.u === userKey))) { duMsg('You are already in a duel with this code.'); return; }
     if (room && room.a && room.b) { duMsg('That code is being used by a duel right now. Pick another code.'); return; }
-    const me = { u: userKey, n: playerName, t: { '.sv': 'timestamp' } };   // t = the database's own clock
+    const me = { u: userKey, n: playerName, t: { '.sv': 'timestamp' } };
     let slot = null, wroteAt = 0;
-    for (const s of (room && room.a ? ['b'] : ['a', 'b'])) {   // the database only lets ONE player take each slot
+    for (const s of (room && room.a ? ['b'] : ['a', 'b'])) {
       const p0 = Date.now();
       if (await duPut(code, s, me)) { slot = s; wroteAt = (p0 + Date.now()) / 2; break; }
     }
     if (!slot) { duMsg('That room just filled up. Pick another code.'); return; }
-    // how far this device's clock is from the database clock (so both players can start at the same real moment)
     let clockOff;
     try { const st = await duGet(code, slot + '/t'); if (typeof st === 'number') clockOff = st - wroteAt; } catch (e) {}
     wallet -= DUEL_FEE; saveWallet();
@@ -1007,7 +991,6 @@ async function duTick() {
         duel.oppName = String(opp.n || '?').slice(0, 12);
         let h = 0; for (const ch of duel.code) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
         duel.seed = h ^ (Math.floor(room.a.t || 1) % 2147483647);
-        // both start DUEL_LEAD ms after the second player joined, measured on the database clock
         const startServer = Math.max(+room.a.t || 0, +room.b.t || 0) + DUEL_LEAD;
         duel.startAt = duel.clockOff === undefined ? 0 : Math.min(startServer - duel.clockOff, Date.now() + DUEL_LEAD + 1500);
         duStartCountdown();
@@ -1021,10 +1004,10 @@ async function duTick() {
         if (duel !== myDuel || duel.phase !== 'waitres') return;
         if (!room) { duGone(); return; }
       }
-      if (!res || res[duel.slot] === undefined) duPut(duel.code, 'res/' + duel.slot, duel.myScore).catch(() => {});   // my score didn't arrive yet: send again
+      if (!res || res[duel.slot] === undefined) duPut(duel.code, 'res/' + duel.slot, duel.myScore).catch(() => {});
       if (duelOpen && Date.now() - duel.since > DUEL_FORFEIT_MS && !duBody.querySelector('button')) duRender();
     }
-  } catch (e) { /* network hiccup: next tick tries again */ }
+  } catch (e) {}
 }
 function duStartCountdown() {
   duStopTimer(); duel.phase = 'countdown'; duSave(); duMsg('');
@@ -1047,7 +1030,6 @@ function beginDuelRun() {
   reset(); state = 'play'; overlay.style.display = 'none'; updateBjBtn();
   duStartLive();
 }
-// while running: keep asking whether the opponent has been caught (their survival time shows up in res/<other>)
 function duStopLive() { if (duLiveTimer) clearInterval(duLiveTimer); duLiveTimer = 0; }
 function duStartLive() {
   duStopLive();
@@ -1059,12 +1041,10 @@ function duStartLive() {
       if (!r.ok) return;
       const v = await r.json();
       if (duel === myDuel && duel.phase === 'playing' && typeof v === 'number') { duel.oppTime = v; duStopLive(); }
-    } catch (e) { /* try again next tick */ }
+    } catch (e) {}
   }, 500);
 }
-// tell the database how long I survived (write-once, so the first value is final)
 function duSendTime(ms) { if (duel) duPut(duel.code, 'res/' + duel.slot, ms).catch(() => {}); }
-// the opponent was caught earlier and my run time has now passed theirs: I win, my run ends right here
 function duOutlast() {
   const ms = Math.max(Math.round(time * 1000), duel.oppTime + 1);
   duel.runMs = ms;
@@ -1082,8 +1062,6 @@ async function duForfeit() {
   if (!duel || duel.phase !== 'waitres') return;
   try { await duPut(duel.code, 'res/' + duOther(), -1); duTick(); } catch (e) { duMsg('Could not reach the server.'); }
 }
-// A finished duel frees its code once both players have collected their result (each writes done/<slot>).
-// If one player forfeited / left, the other player's "done" is enough, so a code never stays blocked forever.
 function duDeletable(room) {
   const r = room && room.res, d = (room && room.done) || {};
   if (!r || r.a === undefined || r.b === undefined) return false;
@@ -1095,15 +1073,14 @@ async function duDelete(code) {
 async function duCleanup(code, slot) {
   for (let i = 0; i < 4; i++) {
     try {
-      await duPut(code, 'done/' + slot, true);   // "I have my result" (write-once)
+      await duPut(code, 'done/' + slot, true);
       const room = await duGet(code);
-      if (!room) return;                          // the other player already freed the code
+      if (!room) return;
       if (duDeletable(room)) await duDelete(code);
       return;
     } catch (e) { await new Promise(r => setTimeout(r, 1500)); }
   }
 }
-// the room was removed while I was away (the other player had already left and the code was freed)
 function duGone() {
   duStopTimer(); duStopLive();
   duel.phase = 'result'; duel.outcome = 'closed'; duel.pay = 0;
@@ -1119,20 +1096,18 @@ function duSettle(res) {
   duel.pay = duel.outcome === 'win' ? DUEL_WIN : duel.outcome === 'lose' ? DUEL_LOSE : DUEL_FEE;
   duel.phase = 'result';
   wallet += duel.pay; saveWallet();
-  try { localStorage.removeItem(DUEL_KEY); } catch (e) {}   // paid out: never pay twice
+  try { localStorage.removeItem(DUEL_KEY); } catch (e) {}
   rng = Math.random; initAudio(); (duel.outcome === 'lose' ? sfx.busted : sfx.win)();
   duCleanup(duel.code, duel.slot);
-  // names: take the opponent's from the room (fetched once more, best effort)
   duRender();
 }
-// came back to the page (or logged in again) while a duel was still open: carry on where we were
 function duResume() {
   if (duel || !userKey || state === 'play' || state === 'caught' || bjOpen || shopOpen) return;
   let sv = null; try { sv = JSON.parse(localStorage.getItem(DUEL_KEY) || 'null'); } catch (e) {}
   if (!sv || sv.k !== userKey || !sv.code || (sv.slot !== 'a' && sv.slot !== 'b')) return;
   duel = { code: sv.code, slot: sv.slot, phase: sv.phase, myScore: sv.score, seed: 0, oppName: '', since: Date.now() };
   duelOpen = true; updateDuelUI();
-  if (duel.phase === 'playing') { duFinishRun(0); return; }   // left in the middle of a run = survived 0 seconds
+  if (duel.phase === 'playing') { duFinishRun(0); return; }
   if (duel.phase !== 'waitres') duel.phase = 'waiting';
   duRender(); duPoll();
 }
@@ -1156,7 +1131,6 @@ function startGame() {
   reset(); state = 'play'; overlay.style.display = 'none'; updateBjBtn();
 }
 window.addEventListener('keydown', e => {
-  // typing the name: don't treat keys as game controls
   if (e.target && e.target.tagName === 'INPUT') { if (e.key === 'Enter') { if (e.target.id === 'copInput') applyCopName(e.target.value); else if (e.target.id === 'nickInput') applyNick(e.target.value); else if (e.target.id === 'duelInput') joinDuel(); else submitAuth(); } return; }
   const k = e.key;
   if (bjOpen) { bjKey(e); return; }
@@ -1191,7 +1165,6 @@ function spawnRow() {
   const n = rng() < Math.min(0.15 + time * 0.01, 0.55) ? 2 : 1;
   const lanes = [-1, 0, 1].sort(() => rng() - 0.5);
   const types = ['low', 'low', 'high', 'high', 'block'];
-  // after ~10s some rows contain an oncoming truck (more often the longer you survive)
   const truck = time > 10 && rng() < Math.min(0.1 + (time - 10) * 0.006, 0.35);
   let truckLane = null;
   if (truck) {
@@ -1208,7 +1181,6 @@ function spawnRow() {
   }
   return truckLane;
 }
-// A line of coins placed halfway between this obstacle row and the next one
 function spawnCoins(gap, avoidLane) {
   const choices = [-1, 0, 1].filter(l => l !== avoidLane);
   const lane = choices[(rng() * choices.length) | 0];
@@ -1230,9 +1202,8 @@ function scrollWorld(dt) {
 }
 function crash() {
   state = 'caught'; crashT = 0; P.queue = false; sfx.crash();
-  if (duel && duel.phase === 'playing') duSendTime(Math.round(time * 1000));   // duel: the opponent finds out immediately
+  if (duel && duel.phase === 'playing') duSendTime(Math.round(time * 1000));
 }
-// KINGO smashes an obstacle: it spins off the top of the screen, the run goes on
 function smashHit(o) {
   o.fly = { t: 0, vx: Math.random() < 0.5 ? -1 : 1, spin: (Math.random() < 0.5 ? -1 : 1) * (6 + Math.random() * 6) };
   const s = sc(PZ), x = sx(P.x, s), y = sy(s) - 0.5 * U * s;
@@ -1259,7 +1230,7 @@ function gameOver(outlasted) {
   submitScore(s).then(() => renderBoard(s));
   overlay.style.display = 'flex';
   updateBjBtn();
-  if (duel && duel.phase === 'playing') duFinishRun(duel.runMs !== undefined ? duel.runMs : Math.round(time * 1000));   // duel result = survival time in ms
+  if (duel && duel.phase === 'playing') duFinishRun(duel.runMs !== undefined ? duel.runMs : Math.round(time * 1000));
 }
 function burstFx(m) {
   const cols = ['#ff4d6d', '#ffd23f', '#4dd0ff', '#7cff6b', '#c77dff', '#ff9f1c', '#ffffff'];
@@ -1286,12 +1257,11 @@ function update(dt) {
     time += dt;
     speed = Math.min(maxSpeed(), SPEED_START + time * SPEED_RAMP);
     dist += speed * dt;
-    score += dt * (8 + speed * 0.3);
+    score += dt * (8 + speed * 0.3 + (speed * speed * 0.006));
     P.x += (P.lane - P.x) * Math.min(1, dt * 14);
     physics(dt);
     P.t += dt * Math.min(speed / 16, 2.6);
     C.t += dt * Math.min(speed / 16, 2.6);
-    // the cop runs in the lane right behind the runner, but far back
     C.x += (P.x - C.x) * Math.min(1, dt * 3);
     C.z = PZ - COP_GAP + Math.sin(time * 3) * 0.3;
     scrollWorld(dt);
@@ -1300,7 +1270,6 @@ function update(dt) {
     spawnDist -= speed * dt;
     if (spawnDist <= 0) {
       const truckLane = spawnRow();
-      // rows get closer together the longer you survive
       const gap = speed * (Math.max(0.75, 0.95 - time * 0.004) + rng() * 0.7) + 5;
       spawnDist = gap;
       if (rng() < 0.8) spawnCoins(gap, truckLane);
@@ -1326,20 +1295,18 @@ function update(dt) {
     while (score >= nextMilestone) { burstFx(nextMilestone); nextMilestone += MILESTONE; }
 
     for (const o of obstacles) {
-      if (o.fly) continue;                       // already smashed away
+      if (o.fly) continue;
       if (o.z <= PZ + 0.7 && o.prev >= PZ - 0.6 && Math.abs(o.lane - P.x) < 0.62) {
         let hit;
         if (o.type === 'low') hit = P.py < 0.5;
         else if (o.type === 'high') hit = P.slide <= 0;
         else hit = true;
         if (hit) {
-          // KINGO: the first hit on anything except an oncoming truck sends the obstacle flying
           if (P.shield > 0 && o.type !== 'truck') { P.shield = 0; smashHit(o); continue; }
           crash(); break;
         }
       }
     }
-    // duel: the opponent is already caught and I have now survived longer than they did
     if (state === 'play' && duel && duel.phase === 'playing' && duel.oppTime !== undefined && time * 1000 > duel.oppTime) duOutlast();
   } else if (state === 'caught') {
     crashT += dt;
@@ -1352,7 +1319,6 @@ function update(dt) {
     scrollWorld(dt);
     for (const o of obstacles) { o.z -= speed * dt * (1 + (o.k || 0)); if (o.fly) o.fly.t += dt; }
     for (const c of coins) c.z -= speed * dt;
-    // same clean-up as while running: anything that drove past the camera is removed
     obstacles = obstacles.filter(o => o.z > -4 && !(o.fly && o.fly.t > 1.1));
     coins = coins.filter(c => c.z > -4);
     if (crashT > 1.1) gameOver();
@@ -1365,7 +1331,6 @@ function rr(x, y, w, h, r) {
   if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
   ctx.fill();
 }
-// black & white horizontal stripes (thief shirt)
 function stripedRect(x, y, w, h, r, n) {
   ctx.save(); ctx.beginPath();
   if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h);
@@ -1380,7 +1345,6 @@ function roadQuad(x0, x1, za, zb, color) {
   if (zb > ZV) zb = ZV;
   if (za >= zb) return;
   ctx.fillStyle = color;
-  // long strips are cut into short pieces so they follow the curve of the world
   const n = Math.max(1, Math.ceil((zb - za) / 3));
   for (let i = 0; i < n; i++) {
     const a = za + (zb - za) * i / n, b = za + (zb - za) * (i + 1) / n + (i < n - 1 ? 0.15 : 0);
@@ -1439,16 +1403,16 @@ function drawWaves() {
 
 function drawBackground() {
   const T = THEMES[curBg] || THEMES.default;
-  const HZ = ZV < ZMAX ? CREST_Y : HY;   // where the (curved) world ends and the sky begins
+  const HZ = ZV < ZMAX ? CREST_Y : HY;
   const g = ctx.createLinearGradient(0, 0, 0, HZ);
   g.addColorStop(0, T.sky[0]); g.addColorStop(0.6, T.sky[1]); g.addColorStop(1, T.sky[2]);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, HZ + 1);
-  // sun
+
   const sg = ctx.createRadialGradient(CX, HZ - H * 0.03, 5, CX, HZ - H * 0.03, H * 0.13);
   sg.addColorStop(0, T.sun[0]); sg.addColorStop(0.4, T.sun[1]); sg.addColorStop(1, T.sun[2]);
   ctx.fillStyle = sg; ctx.fillRect(0, 0, W, HZ);
   if (T.clouds) drawClouds();
-  // far horizon
+
   ctx.fillStyle = T.skyline;
   const hk = HY / 0.22;
   if (T.hz === 'hills') {
@@ -1456,14 +1420,14 @@ function drawBackground() {
   } else {
     for (const s of skyline) ctx.fillRect(s.x * W, HZ - s.h * hk, s.w * W + 1, s.h * hk);
   }
-  // ground (or water)
+
   if (T.water) {
     const wg = ctx.createLinearGradient(0, HZ, 0, H);
     wg.addColorStop(0, '#6cc6f0'); wg.addColorStop(1, T.ground); ctx.fillStyle = wg;
   } else ctx.fillStyle = T.ground;
   ctx.fillRect(0, HZ, W, H - HZ);
   if (T.water) drawWaves();
-  // sidewalks, curbs, road
+
   roadQuad(-T.sideW, -1.7, -4, ZMAX, T.side);
   roadQuad(1.7, T.sideW, -4, ZMAX, T.side);
   roadQuad(-1.7, -1.55, -4, ZMAX, T.curb);
@@ -1481,7 +1445,7 @@ function drawBackground() {
     const z0 = i * P8 - off8, za = Math.max(z0, -4), zb = z0 + 3;
     if (zb > za) for (const lx of [-0.5, 0.5]) roadQuad(lx - 0.03, lx + 0.03, za, Math.min(zb, ZMAX), '#e8e8f0');
   }
-  // horizon haze
+
   const hzH = (GY - HY) * 0.3;
   const hz = ctx.createLinearGradient(0, HZ, 0, HZ + hzH);
   hz.addColorStop(0, T.haze); hz.addColorStop(1, fadeOut(T.haze));
@@ -1515,7 +1479,6 @@ function drawLamp(b) {
   ctx.globalAlpha = fog(b.z);
   ctx.fillStyle = '#8b919c';
   if (b.seed % 3 === 0) {
-    // green road sign
     ctx.fillRect(x - 0.04 * k, gy - 2.4 * k, 0.08 * k, 2.4 * k);
     const w = 1.15 * k, h = 0.55 * k, bx = x - w / 2, by = gy - 2.95 * k;
     ctx.fillStyle = '#177a4d'; ctx.fillRect(bx, by, w, h);
@@ -1525,7 +1488,6 @@ function drawLamp(b) {
     ctx.fillRect(bx + 0.12 * k, by + 0.3 * k, w * 0.35, 0.07 * k);
     ctx.beginPath(); ctx.moveTo(bx + w - 0.32 * k, by + 0.2 * k); ctx.lineTo(bx + w - 0.12 * k, by + 0.27 * k); ctx.lineTo(bx + w - 0.32 * k, by + 0.38 * k); ctx.fill();
   } else {
-    // street lamp reaching over the road
     const ph = 3.1 * k, ax = x - sd * 0.75 * k;
     ctx.fillRect(x - 0.045 * k, gy - ph, 0.09 * k, ph);
     ctx.strokeStyle = '#8b919c'; ctx.lineWidth = Math.max(1, 0.07 * k); ctx.lineCap = 'round';
@@ -1560,7 +1522,7 @@ function drawBuilding(b) {
 function drawObstacle(o) {
   const s = sc(o.z), k = U * s, gy = sy(s), cx = sx(o.lane, s);
   ctx.globalAlpha = fog(o.z);
-  const fl = o.fly;   // smashed by KINGO: fling it up and sideways, spinning
+  const fl = o.fly;
   if (fl) {
     ctx.save();
     ctx.translate(cx + fl.vx * W * 0.8 * fl.t, gy - H * 1.8 * fl.t + H * 0.2 * fl.t * fl.t);
@@ -1586,7 +1548,6 @@ function drawObstacle(o) {
     const n = 8, bw = w / n;
     for (let i = 0; i < n; i += 2) ctx.fillRect(cx - w / 2 + i * bw, y, bw, h);
   } else if (o.type === 'truck') {
-    // front of a truck driving toward the player
     const w = 0.96 * k, h = 1.5 * k, x = cx - w / 2, y = gy - h;
     const on = Math.floor(performance.now() / 160) % 2;
     ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(x - 0.06 * k, gy - 0.04 * k, w + 0.12 * k, 0.08 * k);
@@ -1622,15 +1583,112 @@ function drawObstacle(o) {
 }
 
 const PAL_PLAYER ={ skin: '#f1c27d', top: '#f4f4f4', pants: '#161616', hat: '#111', hair: '#2a1c14', shoe: '#666', stripe: true, sack: true };
-// KINGO: broad (bulk), royal red tunic, purple cape and a gold crown
 const PAL_KINGO = { skin: '#e8b07a', top: '#c0392b', pants: '#3b2a66', hat: '#4a2a14', hair: '#3a2210', shoe: '#ffd23f', bulk: 1.4, cape: '#6c2bd9', crown: true };
 const PAL_COP ={ skin: '#e0ac69', top: '#1f4aa8', pants: '#0c1f4d', hat: '#0b1b46', hair: '#2a2a2a', shoe: '#111', cop: true };
+const PAL_AHMET = { bike: true };
 
 function person(x, gy, k, o) {
   const c = ctx, p = o.pal;
   c.save(); c.translate(x, gy); c.lineCap = 'round';
+
+  // AhmetCan: Motosiklet ve Özel Animasyonlar (Dik / Yola Arkadan Görünüm)
+  if (p.bike) {
+    if (o.mode === 'fall') { 
+      c.rotate(o.fall * 1.5); 
+    } else if (o.mode === 'jump') {
+      // Zıplarken Ön Kaldırma (Wheelie) - önü kalkacak şekilde hafif açı ve yukarı taşıma
+      c.translate(0, -0.15 * k);
+      c.rotate(-0.25);
+    }
+
+    const duck = o.mode === 'slide';
+    const hy = duck ? -0.45 * k : -0.72 * k; // Eğilme hareketi (Kafayı gidona bastırma)
+
+    // 1. Arka Tekerlek (Derinlemesine Kalın Dik Tekerlek)
+    c.fillStyle = '#151515';
+    rr(-0.08 * k, -0.28 * k, 0.16 * k, 0.28 * k, 0.04 * k);
+    c.fillStyle = '#333';
+    rr(-0.05 * k, -0.25 * k, 0.10 * k, 0.22 * k, 0.02 * k);
+
+    // 2. Çift Egzoz Boruları (Sağ ve Sol)
+    c.fillStyle = '#777';
+    rr(-0.14 * k, -0.22 * k, 0.05 * k, 0.15 * k, 0.02 * k);
+    rr(0.09 * k, -0.22 * k, 0.05 * k, 0.15 * k, 0.02 * k);
+
+    // 3. Motor Gövdesi & Çamurluk
+    c.fillStyle = '#d32f2f';
+    c.beginPath();
+    c.moveTo(-0.18 * k, -0.32 * k);
+    c.lineTo(0.18 * k, -0.32 * k);
+    c.lineTo(0.12 * k, -0.48 * k);
+    c.lineTo(-0.12 * k, -0.48 * k);
+    c.closePath();
+    c.fill();
+
+    // Arka Stop Lambası
+    c.fillStyle = '#ff1744';
+    rr(-0.07 * k, -0.36 * k, 0.14 * k, 0.05 * k, 0.02 * k);
+
+    // 4. Gidon & Aynalar
+    c.strokeStyle = '#555';
+    c.lineWidth = 0.04 * k;
+    c.beginPath();
+    c.moveTo(-0.26 * k, hy + 0.18 * k);
+    c.lineTo(0.26 * k, hy + 0.18 * k);
+    c.stroke();
+    c.fillStyle = '#111';
+    rr(-0.28 * k, hy + 0.16 * k, 0.05 * k, 0.05 * k, 0.01 * k);
+    rr(0.23 * k, hy + 0.16 * k, 0.05 * k, 0.05 * k, 0.01 * k);
+
+    // 5. Sürücü (AhmetCan - Sırt Görünümü)
+    c.fillStyle = '#1a237e'; // Mavi Kot Pantolon
+    rr(-0.16 * k, -0.45 * k, 0.32 * k, 0.15 * k, 0.04 * k);
+
+    c.fillStyle = '#212121'; // Siyah Sürücü Ceketi
+    c.beginPath();
+    c.moveTo(-0.17 * k, -0.42 * k);
+    c.lineTo(0.17 * k, -0.42 * k);
+    c.lineTo(0.19 * k, hy + 0.12 * k);
+    c.lineTo(-0.19 * k, hy + 0.12 * k);
+    c.closePath();
+    c.fill();
+
+    c.strokeStyle = '#ff9800'; // Ceket Sırt Şeritleri
+    c.lineWidth = 0.03 * k;
+    c.beginPath();
+    c.moveTo(-0.12 * k, hy + 0.16 * k);
+    c.lineTo(-0.1 * k, -0.4 * k);
+    c.moveTo(0.12 * k, hy + 0.16 * k);
+    c.lineTo(0.1 * k, -0.4 * k);
+    c.stroke();
+
+    // 6. Kask (Arka Bakış Açısı)
+    c.fillStyle = '#ff9800';
+    c.beginPath();
+    c.arc(0, hy, 0.12 * k, 0, Math.PI * 2);
+    c.fill();
+
+    c.fillStyle = '#212121';
+    c.beginPath();
+    c.arc(0, hy, 0.12 * k, Math.PI * 0.2, Math.PI * 0.8);
+    c.fill();
+
+    // 7. İsim Etiketi
+    if (o.tag && k > 22) {
+      c.save();
+      const fs = Math.max(8, Math.min(0.1 * k, 0.5 * k / (o.tag.length * 0.6)));
+      c.font = '800 ' + fs + 'px system-ui,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      const pw = c.measureText(o.tag).width + 0.1 * k, ph = fs * 1.4, py = hy - 0.2 * k;
+      c.fillStyle = 'rgba(15,10,30,.88)'; rr(-pw / 2, py - ph / 2, pw, ph, ph * 0.3);
+      c.fillStyle = '#ffd23f'; c.fillText(o.tag, 0, py + fs * 0.04);
+      c.restore();
+    }
+    c.restore();
+    return;
+  }
+
   if (o.mode === 'fall') c.rotate(o.fall * 1.5);
-  if (p.bulk) c.scale(p.bulk, 1.04);   // KINGO is a lot wider than the thief
+  if (p.bulk) c.scale(p.bulk, 1.04);
   if (o.mode === 'slide') {
     c.fillStyle = p.pants;
     for (const sd of [-1, 1]) { rr(sd * 0.1 * k - 0.07 * k, -0.5 * k, 0.14 * k, 0.2 * k, 0.04 * k); }
@@ -1678,7 +1736,7 @@ function person(x, gy, k, o) {
   }
   if (o.tag && k > 22) {
     c.save();
-    if (p.bulk) c.scale(1 / p.bulk, 1);   // keep the name tag text from being stretched
+    if (p.bulk) c.scale(1 / p.bulk, 1);
     const txt = o.tag;
     const fs = Math.max(8, Math.min(0.13 * k, 0.56 * k / (txt.length * 0.62)));
     c.font = '800 ' + fs + 'px system-ui,sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
@@ -1730,7 +1788,7 @@ function drawPlayer() {
   if (state === 'caught' || state === 'over') mode = 'fall';
   else if (P.py > 0.02) mode = 'jump';
   else if (P.slide > 0) mode = 'slide';
-  person(x, gy - P.py * k, k, { pal: curChar === 'kingo' ? PAL_KINGO : PAL_PLAYER, mode, t: P.t, fall: P.fall, tag: (tagOn && playerName) ? playerName : '' });
+  person(x, gy - P.py * k, k, { pal: curChar === 'kingo' ? PAL_KINGO : curChar === 'ahmetcan' ? PAL_AHMET : PAL_PLAYER, mode, t: P.t, fall: P.fall, tag: (tagOn && playerName) ? playerName : '' });
 }
 function drawCop() {
   const s = sc(C.z), k = U * s, x = sx(C.x, s), gy = sy(s);
@@ -1740,13 +1798,11 @@ function drawCop() {
   person(x, gy, k, { pal: PAL_COP, mode: close && C.z > PZ - 1.4 ? 'grab' : 'run', t: C.t, label: copName || 'POLICE' });
 }
 
-// flashing red triangle above the lane an oncoming truck is about to arrive in
 function drawWarnings() {
   if (state !== 'play') return;
   const flash = Math.floor(performance.now() / 120) % 2;
   for (const o of obstacles) {
     if (!o.k || o.z < 26) continue;
-    // sits on the road far ahead, near the horizon, in the lane the truck will arrive in
     const ws = sc(Math.min(65, ZV - 6)), x = sx(o.lane, ws), r = Math.max(8, H * 0.022), y = sy(ws) - r * 0.85;
     ctx.fillStyle = 'rgba(255,59,48,.35)'; ctx.beginPath(); ctx.ellipse(x, sy(ws), r * 1.4, r * 0.3, 0, 0, 7); ctx.fill();
     ctx.save(); ctx.globalAlpha = flash ? 1 : 0.5; ctx.lineJoin = 'round';
@@ -1810,12 +1866,10 @@ function render() {
   for (const o of obstacles) if (o.z < ZV && o.z > -5) list.push({ z: o.z, f: () => drawObstacle(o) });
   for (const co of coins) if (co.z > -5 && co.z < ZV) list.push({ z: co.z, f: () => drawCoin(co) });
   list.push({ z: PZ, f: drawPlayer });
-  // while chasing, the cop is drawn behind the runner so he never covers him
   list.push({ z: (state === 'caught' || state === 'over') ? C.z : PZ + 0.5, f: drawCop });
   list.sort((a, b) => b.z - a.z);
   for (const d of list) d.f();
 
-  // siren glow
   const flash = Math.floor(performance.now() / 220) % 2;
   const a = (state === 'caught' || state === 'over') ? 0.4 : 0.14;
   const wd = W * 0.35;
@@ -1829,7 +1883,6 @@ function render() {
   drawFx();
   drawWarnings();
 
-  // HUD
   if (state !== 'menu') {
     const fs = Math.round(Math.max(18, W * 0.028));
     ctx.font = '800 ' + fs + 'px system-ui,sans-serif'; ctx.textBaseline = 'top';
@@ -1871,7 +1924,6 @@ function render() {
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.033, (now - last) / 1000); last = now;
-  // schedule the next frame first, so one unexpected error can never freeze the whole game
   requestAnimationFrame(frame);
   try { update(dt); render(); } catch (e) { if (window.console) console.error(e); }
 }
@@ -1881,7 +1933,7 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', resi
 resize(); makeSkyline(); reset(); updateWalletUI(); updateAuthUI(); restoreSession(); loadBoard();
 requestAnimationFrame(frame);
 })();
-// PWA: lets players install the game ("Add to Home Screen") and open it offline
+
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 }
