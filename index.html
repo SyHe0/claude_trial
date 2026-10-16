@@ -594,7 +594,7 @@ logoutBtn.addEventListener('click', logout);
 
 // ---------- leaderboard ----------
 const LEADERBOARD_URL = 'https://claudetrial-12631-default-rtdb.europe-west1.firebasedatabase.app/';
-const BOARD_SIZE = 10;
+const BOARD_SIZE = 10, BOARD_FETCH = 300;   // fetch extra rows so duplicates can be dropped
 let board = [], boardOnline = false;
 const boardBase = () => LEADERBOARD_URL.replace(/\/+$/, '');
 function normEntry(v) {
@@ -602,26 +602,33 @@ function normEntry(v) {
   if (v && typeof v === 'object' && Number.isFinite(v.s)) return { n: String(v.n || '?').slice(0, 12), s: v.s };
   return null;
 }
+// one row per player: keep each name's best score, then sort and cut to the top
+function bestPerPlayer(list) {
+  const m = new Map();
+  for (const e of list) { const k = e.n.toLowerCase(); const o = m.get(k); if (!o || e.s > o.s) m.set(k, e); }
+  return [...m.values()].sort((a, b) => b.s - a.s).slice(0, BOARD_SIZE);
+}
 function localBoard() {
-  try { return JSON.parse(localStorage.getItem('copChaseBoard') || '[]').map(normEntry).filter(Boolean); } catch (e) { return []; }
+  try { return bestPerPlayer(JSON.parse(localStorage.getItem('copChaseBoard') || '[]').map(normEntry).filter(Boolean)); } catch (e) { return []; }
 }
 function saveLocalBoard(arr) { try { localStorage.setItem('copChaseBoard', JSON.stringify(arr)); } catch (e) {} }
 async function loadBoard() {
   if (!LEADERBOARD_URL) { board = localBoard(); boardOnline = false; renderBoard(); return; }
   try {
-    const r = await fetch(boardBase() + '/scores.json?orderBy=%22s%22&limitToLast=' + BOARD_SIZE);
+    const r = await fetch(boardBase() + '/scores.json?orderBy=%22s%22&limitToLast=' + BOARD_FETCH);
     if (!r.ok) throw new Error('bad response');
     const data = (await r.json()) || {};
-    board = Object.values(data).map(normEntry).filter(Boolean).sort((a, b) => b.s - a.s).slice(0, BOARD_SIZE);
+    board = bestPerPlayer(Object.values(data).map(normEntry).filter(Boolean));
     boardOnline = true;
   } catch (e) { board = localBoard(); boardOnline = false; }
   renderBoard();
 }
 async function submitScore(s) {
   if (s <= 0) return;
-  const lb = localBoard(); lb.push({ n: playerName, s }); lb.sort((a, b) => b.s - a.s); saveLocalBoard(lb.slice(0, BOARD_SIZE));
+  const lb = localBoard(); lb.push({ n: playerName, s }); saveLocalBoard(bestPerPlayer(lb));
   if (!LEADERBOARD_URL) { board = localBoard(); return; }
-  const qualifies = board.length < BOARD_SIZE || s > board[board.length - 1].s;
+  const mine = board.find(e => e.n.toLowerCase() === playerName.toLowerCase());
+  const qualifies = mine ? s > mine.s : (board.length < BOARD_SIZE || s > board[board.length - 1].s);
   if (qualifies) {
     try {
       await dbf(boardBase() + '/scores.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ n: playerName, s }) });
